@@ -4,9 +4,9 @@
   "description": "A Phaser 3 Hello World game using Bun and TypeScript",
   "main": "dist/main.js",
   "scripts": {
-    "build": "bun build src/main.ts --outdir dist --target browser",
-    "dev": "bun --watch build src/main.ts --outdir dist --target browser",
-    "serve": "bunx serve . -p 3000"
+    "build": "bun build src/main.ts --outdir dist --target browser && cp -r public/* dist/ && cp index.html dist/",
+    "dev": "bun --watch build src/main.ts --outdir dist --target browser && cp -r public/* dist/ && cp index.html dist/",
+    "serve": "bunx serve dist -p 3000"
   },
   "keywords": ["phaser", "game", "typescript", "bun"],
   "author": "",

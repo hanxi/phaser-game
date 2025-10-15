@@ -67,18 +67,18 @@ export class LoginScene extends Phaser.Scene {
     }
 
     /**
-     * 切换到游戏场景
+     * 切换到选服场景
      */
     private switchToGameScene(): void {
-        // 传递登录信息到游戏场景
-        const gameData = {
+        // 传递登录信息到选服场景
+        const serverSelectData = {
             provider: this.currentProvider,
             tokens: this.oauthLogin.getTokens(),
             oauthLogin: this.oauthLogin
         };
 
-        // 启动游戏场景并停止当前场景
-        this.scene.start('GameScene', gameData);
+        // 启动选服场景并停止当前场景
+        this.scene.start('ServerSelectScene', serverSelectData);
     }
 
     /**

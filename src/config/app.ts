@@ -34,7 +34,25 @@ export const GAME_CONFIG = {
     BACKGROUND_COLOR: '#2c3e50',
     
     // 容器ID
-    PARENT_CONTAINER: 'game-container'
+    PARENT_CONTAINER: 'game-container',
+    
+    // 资源服务器配置
+    RESOURCE_SERVER: {
+        // 统一资源服务器地址
+        BASE_URL: '/resources',
+        
+        // 默认资源列表
+        DEFAULT_RESOURCES: [
+            { path: 'protocol/sproto.spb', type: 'binary' as const },
+            // { path: 'config/game_config.json', type: 'text' as const }
+        ]
+    },
+    
+    // 服务器列表配置
+    SERVER_LIST: {
+        // 服务器列表文件URL
+        URL: '/serverlist.json'
+    }
 } as const;
 
 /**

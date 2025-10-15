@@ -1,0 +1,17 @@
+[
+  {
+    "id": "server1",
+    "name": "测试服务器1",
+    "wsUrl": "ws://localhost:8080/ws"
+  },
+  {
+    "id": "server2", 
+    "name": "测试服务器2",
+    "wsUrl": "ws://localhost:8081/ws"
+  },
+  {
+    "id": "server3",
+    "name": "正式服务器",
+    "wsUrl": "ws://game.example.com:8080/ws"
+  }
+]
