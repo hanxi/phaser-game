@@ -29,7 +29,7 @@ export class NetworkService {
 
     try {
       let buffer: number[];
-      
+
       if (protocolBuffer) {
         // 如果提供了协议数据，直接使用
         buffer = protocolBuffer;
@@ -37,7 +37,7 @@ export class NetworkService {
         // 从资源管理器获取 spb 文件内容
         const resourceManager = ResourceManager.getInstance();
         const spbData = resourceManager.getResource<number[]>('sproto.spb');
-        
+
         if (!spbData) {
           throw new Error('Protocol file not found in resources. Please ensure sproto.spb is loaded.');
         } else {
@@ -45,7 +45,7 @@ export class NetworkService {
           buffer = Array.from(new Uint8Array(spbData));
         }
       }
-      
+
       const result = this.sprotoManager.initialize(buffer);
       if (result) {
         this.isInitialized = true;
