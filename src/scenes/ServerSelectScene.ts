@@ -206,7 +206,9 @@ export class ServerSelectScene extends Phaser.Scene {
             }
 
             // 发送登录请求
-            const loginSuccess = this.networkService.sendLogin('user', 'password');
+            const token = this.sceneData?.tokens?.access_token || '';
+            console.log("token", token);
+            const loginSuccess = await this.networkService.login(token);
             if (!loginSuccess) {
                 throw new Error('发送登录请求失败');
             }

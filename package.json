@@ -12,7 +12,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "phaser": "^3.70.0"
+    "phaser": "^3.70.0",
+    "sconn-client": "^1.0.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
