@@ -1,3 +1,4 @@
+// import { Network } from '../../sconn-client/src';
 import { Network } from 'sconn-client';
 import { JWTUtils } from '../lib/auth/JWTUtils';
 import { ResourceManager } from '../managers/ResourceManager';

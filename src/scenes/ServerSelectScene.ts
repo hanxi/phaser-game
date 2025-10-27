@@ -64,9 +64,6 @@ export class ServerSelectScene extends Phaser.Scene {
 
         // 创建选服界面
         this.createServerSelectUI();
-
-        // 设置网络服务消息处理器
-        this.setupNetworkHandlers();
     }
 
     /**
@@ -215,23 +212,16 @@ export class ServerSelectScene extends Phaser.Scene {
 
             console.log('Login request sent, waiting for response...');
 
+            if (loginSuccess.code === 0) {
+                this.handleLoginResponse(loginSuccess);
+            }
+
         } catch (error) {
             console.error('Server connection failed:', error);
             this.showError(`连接失败: ${error}`);
             this.setButtonsEnabled(true);
             this.hideConnecting();
         }
-    }
-
-    /**
-     * 设置网络服务消息处理器
-     */
-    private setupNetworkHandlers(): void {
-        // 处理登录响应
-        this.networkService.onMessage('login_response', (data) => {
-            console.log('Received login_response:', data);
-            this.handleLoginResponse(data);
-        });
     }
 
     /**
