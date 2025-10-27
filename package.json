@@ -12,11 +12,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "phaser": "^3.70.0",
-    "sconn-client": "^1.0.3"
+    "phaser": "^3.90.0",
+    "sconn-client": "^1.0.5"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
+    "@types/node": "^20.19.23",
+    "typescript": "^5.9.3"
   }
 }

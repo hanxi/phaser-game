@@ -1,13 +1,13 @@
 [
   {
-    "id": "server1",
+    "id": "game1",
     "name": "测试服务器1",
-    "wsUrl": "ws://localhost:8080/ws"
+    "wsUrl": "ws://localhost:1249"
   },
   {
-    "id": "server2", 
+    "id": "game2", 
     "name": "测试服务器2",
-    "wsUrl": "ws://localhost:8081/ws"
+    "wsUrl": "ws://localhost:1249"
   },
   {
     "id": "server3",

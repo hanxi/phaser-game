@@ -40,7 +40,7 @@ export class NetworkService {
       } else {
         // 从资源管理器获取 spb 文件内容
         const resourceManager = ResourceManager.getInstance();
-        const spbData = resourceManager.getResource<ArrayBuffer>('sproto.spb');
+        const spbData = resourceManager.getResource<ArrayBuffer>('protocol/sproto.spb');
 
         if (!spbData) {
           throw new Error('Protocol file not found in resources. Please ensure sproto.spb is loaded.');
