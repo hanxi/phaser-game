@@ -1,6 +1,5 @@
 // import { Network } from '../../sconn-client/src';
 import { Network } from 'sconn-client';
-import { JWTUtils } from '../lib/auth/JWTUtils';
 import { ResourceManager } from '../managers/ResourceManager';
 
 /**
@@ -241,6 +240,25 @@ export class NetworkService {
       return response;
     } catch (error) {
       console.error('登录失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 发送登出请求
+   */
+  public async logout(): Promise<any> {
+    if (!this.network) {
+      throw new Error('Network not initialized');
+    }
+
+    try {
+      console.log("开始登出");
+      this.network.invoke('login.logout');
+      console.log("登出成功");
+      return;
+    } catch (error) {
+      console.error('登出失败:', error);
       throw error;
     }
   }

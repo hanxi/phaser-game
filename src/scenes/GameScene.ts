@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { OAuthLogin } from '../auth/OAuthLogin';
 import { OAUTH_CONFIG, GAME_CONFIG, UI_CONFIG } from '../config/app';
 import { OAuthTokens, GameSceneData } from '../types/auth';
+import { NetworkService } from '../services/NetworkService';
 
 /**
  * 游戏主界面场景
@@ -12,9 +13,11 @@ export class GameScene extends Phaser.Scene {
   private currentProvider: string = '';
   private tokens: OAuthTokens | null = null;
   private gameUI: Phaser.GameObjects.Container | null = null;
+  private networkService: NetworkService;
 
   constructor() {
     super({ key: 'GameScene' });
+    this.networkService = (window as any).networkService;
   }
 
   /**
@@ -218,6 +221,12 @@ export class GameScene extends Phaser.Scene {
     if (this.oauthLogin) {
       this.oauthLogin.logout();
     }
+
+    this.networkService.logout().then(() => {
+      console.log('Logout successful in GameScene!');
+    }).catch((error) => {
+      console.error('Logout failed:', error);
+    });
 
     // 清理当前场景数据
     this.currentProvider = '';

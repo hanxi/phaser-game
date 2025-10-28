@@ -5,7 +5,7 @@
       "name": "my-phaser-game",
       "dependencies": {
         "phaser": "^3.90.0",
-        "sconn-client": "^1.0.5",
+        "sconn-client": "^1.0.9",
       },
       "devDependencies": {
         "@types/node": "^20.19.23",
@@ -14,7 +14,7 @@
     },
   },
   "packages": {
-    "@imhanxi/sproto-js": ["@imhanxi/sproto-js@0.1.8", "", {}, "sha512-usX9kAJU4W3jhk4kXII73TiWfPVhwy+Ld3XyV09hIpGvjpRBT/2rFFqMdxvu2IVYVhLDssHvmeCZAlP42ERF+w=="],
+    "@imhanxi/sproto-js": ["@imhanxi/sproto-js@0.1.9", "", {}, "sha512-z4mMFpYBPut2/cMxv7DXmJNqQK/caBz5WZvrddbwhaAhH/xvKJVycWlUxv0oGH9cPAPAB1mcI0Q4tzERf4xjHQ=="],
 
     "@types/node": ["@types/node@20.19.23", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-yIdlVVVHXpmqRhtyovZAcSy0MiPcYWGkoO4CGe/+jpP0hmNuihm4XhHbADpK++MsiLHP5MVlv+bcgdF99kSiFQ=="],
 
@@ -22,7 +22,7 @@
 
     "phaser": ["phaser@3.90.0", "", { "dependencies": { "eventemitter3": "^5.0.1" } }, "sha512-/cziz/5ZIn02uDkC9RzN8VF9x3Gs3XdFFf9nkiMEQT3p7hQlWuyjy4QWosU802qqno2YSLn2BfqwOKLv/sSVfQ=="],
 
-    "sconn-client": ["sconn-client@1.0.9", "", { "dependencies": { "@imhanxi/sproto-js": "^0.1.8", "ws": "^8.14.2" } }, "sha512-7fvi/lI/qoxcJQGLBc2aQRYGPTmVLAbLTVLE9VqAaypxBx/z5kYUBsgYOd1Q5WZ0C+fj3cbewoUrr76e/2CWtQ=="],
+    "sconn-client": ["sconn-client@1.0.10", "", { "dependencies": { "@imhanxi/sproto-js": "^0.1.9", "ws": "^8.14.2" } }, "sha512-OAaCbwpQDz2iT4DDH0XKRWhfFtoz39RfbycucoEyajlff8LGpEb71ntKIsfMnB0r2zep5dEfkPOXhgUaoi643g=="],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
