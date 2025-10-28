@@ -15,7 +15,7 @@ export class NetworkService {
   private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
   private lastUrl: string = '';
-  private gameId: string = 'game1';
+  private gameId: string = 'rolenode1';
 
   // 事件回调
   private onConnectedCallback?: () => void;
@@ -68,9 +68,9 @@ export class NetworkService {
   /**
    * 连接到WebSocket服务器
    * @param url WebSocket服务器地址
-   * @param gameId 游戏ID，默认为'game1'
+   * @param gameId 游戏ID，默认为'rolenode1'
    */
-  public async connect(url: string, gameId: string = 'game1'): Promise<boolean> {
+  public async connect(url: string, gameId: string = 'rolenode1'): Promise<boolean> {
     if (!this.network) {
       console.error('Network not initialized');
       return false;
