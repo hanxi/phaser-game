@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { ResourceLoadingScene } from './scenes/ResourceLoadingScene';
 import { LoginScene } from './scenes/LoginScene';
 import { ServerSelectScene } from './scenes/ServerSelectScene';
+import { RoleCreateScene } from './scenes/RoleCreateScene';
 import { GameScene } from './scenes/GameScene';
 import { GAME_CONFIG } from './config/app';
 
@@ -15,7 +16,7 @@ const config: Phaser.Types.Core.GameConfig = {
     height: GAME_CONFIG.DESIGN_HEIGHT,
     parent: GAME_CONFIG.PARENT_CONTAINER,
     backgroundColor: GAME_CONFIG.BACKGROUND_COLOR,
-    scene: [ResourceLoadingScene, LoginScene, ServerSelectScene, GameScene], // 配置多个场景，ResourceLoadingScene为初始场景
+    scene: [ResourceLoadingScene, LoginScene, ServerSelectScene, RoleCreateScene, GameScene], // 添加RoleCreateScene
 
     scale: {
         mode: Phaser.Scale.FIT,

@@ -219,14 +219,14 @@ export class NetworkService {
    * 发送登录请求
    * @param token JWT令牌
    */
-  public async login(token: string): Promise<any> {
+  public async login(token: string, rid?: number): Promise<any> {
     if (!this.network) {
       throw new Error('Network not initialized');
     }
 
     try {
       const ctx = {
-        rid: 0,
+        rid: rid,
         proto_checksum: this.checksum,
       };
       const data = {
@@ -240,6 +240,67 @@ export class NetworkService {
       return response;
     } catch (error) {
       console.error('登录失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取角色列表
+   */
+  public async getRoles(): Promise<any> {
+    if (!this.network) {
+      throw new Error('Network not initialized');
+    }
+
+    try {
+      console.log("开始获取角色列表");
+      const response = await this.network.call('login.get_roles');
+      console.log("获取角色列表成功", response);
+      return response;
+    } catch (error) {
+      console.error('获取角色列表失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 创建角色
+   * @param name 角色名称
+   */
+  public async createRole(name: string): Promise<any> {
+    if (!this.network) {
+      throw new Error('Network not initialized');
+    }
+
+    try {
+      const data = { name };
+      console.log("开始创建角色", data);
+      const response = await this.network.call('login.create_role', data);
+      console.log("创建角色成功", response);
+      return response;
+    } catch (error) {
+      console.error('创建角色失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 选择角色
+   * @param rid 角色ID
+   */
+  public async chooseRole(rid: number): Promise<any> {
+    if (!this.network) {
+      throw new Error('Network not initialized');
+    }
+
+    try {
+      const data = { rid };
+      console.log("开始选择角色", data);
+      const response = await this.network.call('login.choose_role', data);
+      console.log("选择角色成功", response);
+      return response;
+    } catch (error) {
+      console.error('选择角色失败:', error);
       throw error;
     }
   }
@@ -341,7 +402,6 @@ export class NetworkService {
 
     if (this.network) {
       this.network.close();
-      this.network = null;
     }
 
     this.reconnectAttempts = 0;

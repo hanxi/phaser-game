@@ -5,7 +5,7 @@
       "name": "my-phaser-game",
       "dependencies": {
         "phaser": "^3.90.0",
-        "sconn-client": "^1.0.9",
+        "sconn-client": "^1.0.10",
       },
       "devDependencies": {
         "@types/node": "^20.19.23",
@@ -22,7 +22,7 @@
 
     "phaser": ["phaser@3.90.0", "", { "dependencies": { "eventemitter3": "^5.0.1" } }, "sha512-/cziz/5ZIn02uDkC9RzN8VF9x3Gs3XdFFf9nkiMEQT3p7hQlWuyjy4QWosU802qqno2YSLn2BfqwOKLv/sSVfQ=="],
 
-    "sconn-client": ["sconn-client@1.0.10", "", { "dependencies": { "@imhanxi/sproto-js": "^0.1.9", "ws": "^8.14.2" } }, "sha512-OAaCbwpQDz2iT4DDH0XKRWhfFtoz39RfbycucoEyajlff8LGpEb71ntKIsfMnB0r2zep5dEfkPOXhgUaoi643g=="],
+    "sconn-client": ["sconn-client@1.0.11", "", { "dependencies": { "@imhanxi/sproto-js": "^0.1.9", "ws": "^8.14.2" } }, "sha512-H7vxVWuIoIAWJb+bkr1R684rMZQezxSGayUUF3TNenjud4BUSNKTCw4B8V0SWcgzLJilqE0BoAxAquDEexsodg=="],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
