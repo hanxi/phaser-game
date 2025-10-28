@@ -222,11 +222,7 @@ export class GameScene extends Phaser.Scene {
       this.oauthLogin.logout();
     }
 
-    this.networkService.logout().then(() => {
-      console.log('Logout successful in GameScene!');
-    }).catch((error) => {
-      console.error('Logout failed:', error);
-    });
+    this.networkService.logout();
 
     // 清理当前场景数据
     this.currentProvider = '';

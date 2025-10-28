@@ -247,7 +247,7 @@ export class NetworkService {
   /**
    * 发送登出请求
    */
-  public async logout(): Promise<any> {
+  public logout(): void {
     if (!this.network) {
       throw new Error('Network not initialized');
     }
@@ -256,6 +256,7 @@ export class NetworkService {
       console.log("开始登出");
       this.network.invoke('login.logout');
       console.log("登出成功");
+      this.disconnect();
       return;
     } catch (error) {
       console.error('登出失败:', error);
