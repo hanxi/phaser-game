@@ -317,7 +317,7 @@ export class NetworkService {
    */
   public disconnect(): void {
     console.log('Disconnecting from server...');
-    
+
     this.stopUpdateLoop();
 
     if (this.network) {
