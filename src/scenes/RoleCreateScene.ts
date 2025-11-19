@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG, UI_CONFIG } from '../config/app';
 import { NetworkService } from '../services/NetworkService';
+import { ServerDataService, ServerInfo } from '../services/ServerDataService';
 
 /**
  * 角色创建场景数据接口
@@ -9,7 +10,7 @@ interface RoleCreateSceneData {
     provider: string;
     tokens: any;
     oauthLogin: any;
-    selectedServer: any;
+    selectedServer: ServerInfo;
     networkService: NetworkService;
 }
 
@@ -24,10 +25,13 @@ export class RoleCreateScene extends Phaser.Scene {
     private createButton: Phaser.GameObjects.Container | null = null;
     private errorText: Phaser.GameObjects.Text | null = null;
     private isCreating: boolean = false;
+    private serverDataService: ServerDataService;
+    private isSwitchingRoleNode: boolean = false; // 添加标志位防止递归死循环
 
     constructor() {
         super({ key: 'RoleCreateScene' });
         this.networkService = (window as any).networkService;
+        this.serverDataService = ServerDataService.getInstance();
     }
 
     /**
@@ -38,6 +42,7 @@ export class RoleCreateScene extends Phaser.Scene {
         this.networkService = data.networkService;
         console.log('RoleCreateScene initialized with data:', data);
     }
+
 
     create() {
         // 设置背景色
@@ -263,16 +268,69 @@ export class RoleCreateScene extends Phaser.Scene {
                 console.log('Role created successfully:', response);
                 // 角色创建成功，跳转到游戏场景
                 this.switchToGameScene();
+            } else if (response.rolenode && !this.isSwitchingRoleNode) {
+                // 需要切换到其他游戏节点，且当前不在切换过程中
+                console.log('Create role response indicates need to switch to rolenode:', response.rolenode);
+                await this.switchToRoleNode(response.rolenode);
+            } else if (this.isSwitchingRoleNode && response.rolenode) {
+                // 如果已经在切换游戏节点过程中，再次要求切换则报错
+                throw new Error('检测到游戏节点切换循环，可能存在服务器配置问题');
             } else {
                 // 角色创建失败，显示错误码
                 this.showError(`创建失败，错误码: ${response.code}`);
             }
         } catch (error) {
             console.error('Failed to create role:', error);
-            this.showError('创建角色失败，请重试');
+            this.showError(`创建角色失败: ${error}`);
+            // 重置标志位
+            this.isSwitchingRoleNode = false;
         } finally {
             this.isCreating = false;
             this.setButtonEnabled(true);
+        }
+    }
+
+    /**
+     * 切换到指定的角色节点
+     */
+    private async switchToRoleNode(rolenode: string): Promise<void> {
+        try {
+            console.log('Switching to rolenode:', rolenode);
+            
+            // 设置标志位，表示正在切换角色节点
+            this.isSwitchingRoleNode = true;
+            
+            // 使用ServerDataService检查rolenode是否存在
+            const targetServer = this.serverDataService.getServerById(rolenode);
+            if (!targetServer) {
+                throw new Error(`角色节点 "${rolenode}" 不存在于服务器列表中`);
+            }
+            
+            // 获取token和角色名称
+            const token = this.sceneData?.tokens?.access_token || '';
+            const roleName = this.nameInput?.value.trim();
+            if (!roleName) {
+                throw new Error('角色名称丢失');
+            }
+            
+            // 调用NetworkService的switchToRoleNode方法
+            await this.networkService.switchToRoleNode(targetServer.wsUrl, targetServer.id, token);
+            
+            // 切换成功，重新尝试创建角色
+            const createResponse = await this.networkService.createRole(roleName);
+            if (createResponse.code === 0) {
+                // 角色创建成功，跳转到游戏场景
+                this.switchToGameScene();
+            } else {
+                throw new Error(`重新创建角色失败，错误码: ${createResponse.code}`);
+            }
+            
+        } catch (error) {
+            console.error('Failed to switch rolenode:', error);
+            this.showError(`切换角色节点失败: ${error}`);
+            this.setButtonEnabled(true);
+            // 重置标志位
+            this.isSwitchingRoleNode = false;
         }
     }
 
@@ -331,6 +389,9 @@ export class RoleCreateScene extends Phaser.Scene {
      * 切换到游戏场景
      */
     private switchToGameScene(): void {
+        // 重置角色节点切换标志位
+        this.isSwitchingRoleNode = false;
+        
         // 清理输入框
         this.cleanupInput();
 

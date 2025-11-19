@@ -1,6 +1,7 @@
 // import { Network } from '../../sconn-client/src';
 import { Network } from 'sconn-client';
 import { ResourceManager } from '../managers/ResourceManager';
+import { ServerDataService, ServerInfo } from './ServerDataService';
 
 /**
  * 网络服务类
@@ -15,7 +16,8 @@ export class NetworkService {
   private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
   private lastUrl: string = '';
-  private gameId: string = 'rolenode1';
+  private roleNodeId: string = 'rolenode1';
+  private currentServer: ServerInfo | null = null; // 当前选择的服务器信息
 
   // 事件回调
   private onConnectedCallback?: () => void;
@@ -24,6 +26,31 @@ export class NetworkService {
 
   constructor() {
     // 构造函数保持简单
+  }
+
+  /**
+   * 设置当前选择的服务器
+   * @param serverId 服务器ID
+   */
+  public setCurrentServer(serverId: string): boolean {
+    const serverDataService = ServerDataService.getInstance();
+    const serverInfo = serverDataService.getServerById(serverId);
+
+    if (!serverInfo) {
+      console.error('Server not found:', serverId);
+      return false;
+    }
+
+    this.currentServer = serverInfo;
+    console.log('Current server set to:', serverInfo);
+    return true;
+  }
+
+  /**
+   * 获取当前选择的服务器信息
+   */
+  public getCurrentServer(): ServerInfo | null {
+    return this.currentServer;
   }
 
   /**
@@ -68,18 +95,18 @@ export class NetworkService {
   /**
    * 连接到WebSocket服务器
    * @param url WebSocket服务器地址
-   * @param gameId 游戏ID，默认为'rolenode1'
+   * @param roleNodeId 角色节点ID，默认为'rolenode1'
    */
-  public async connect(url: string, gameId: string = 'rolenode1'): Promise<boolean> {
+  public async connect(url: string, roleNodeId: string = 'rolenode1'): Promise<boolean> {
     if (!this.network) {
       console.error('Network not initialized');
       return false;
     }
 
     this.lastUrl = url;
-    this.gameId = gameId;
+    this.roleNodeId = roleNodeId;
 
-    const connectResult = this.network.connect(url, gameId);
+    const connectResult = this.network.connect(url, roleNodeId);
 
     if (!connectResult.success) {
       console.error(`连接失败: ${connectResult.error}`);
@@ -205,7 +232,7 @@ export class NetworkService {
     await new Promise(resolve => setTimeout(resolve, this.reconnectDelay));
 
     // 尝试重新连接
-    const success = await this.connect(this.lastUrl, this.gameId);
+    const success = await this.connect(this.lastUrl, this.roleNodeId);
     if (!success) {
       // 重连失败，增加延迟时间
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
@@ -224,10 +251,16 @@ export class NetworkService {
       throw new Error('Network not initialized');
     }
 
+    if (!this.currentServer) {
+      throw new Error('No server selected. Please call setCurrentServer() first.');
+    }
+
+
     try {
       const ctx = {
         rid: rid,
         proto_checksum: this.checksum,
+        server: this.currentServer.server, // 使用server字段
       };
       const data = {
         token,
@@ -246,15 +279,19 @@ export class NetworkService {
 
   /**
    * 获取角色列表
+   * @param server 服务器ID，如果不提供则使用当前选择的服务器
    */
-  public async getRoles(): Promise<any> {
+  public async getRoles(server?: string): Promise<any> {
     if (!this.network) {
       throw new Error('Network not initialized');
     }
 
     try {
-      console.log("开始获取角色列表");
-      const response = await this.network.call('login.get_roles');
+      const serverParam = server || this.currentServer?.server || '';
+      const data = { server: serverParam };
+
+      console.log("开始获取角色列表", data);
+      const response = await this.network.call('login.get_roles', data);
       console.log("获取角色列表成功", response);
       return response;
     } catch (error) {
@@ -266,14 +303,23 @@ export class NetworkService {
   /**
    * 创建角色
    * @param name 角色名称
+   * @param server 服务器ID，如果不提供则使用当前选择的服务器
    */
-  public async createRole(name: string): Promise<any> {
+  public async createRole(name: string, server?: string): Promise<any> {
     if (!this.network) {
       throw new Error('Network not initialized');
     }
 
     try {
-      const data = { name };
+      const serverParam = server || this.currentServer?.server;
+      if (!serverParam) {
+        throw new Error('No server specified and no current server selected');
+      }
+
+      const data = {
+        name,
+        server: serverParam
+      };
       console.log("开始创建角色", data);
       const response = await this.network.call('login.create_role', data);
       console.log("创建角色成功", response);
@@ -287,14 +333,24 @@ export class NetworkService {
   /**
    * 选择角色
    * @param rid 角色ID
+   * @param server 服务器ID，如果不提供则使用当前选择的服务器
    */
-  public async chooseRole(rid: number): Promise<any> {
+  public async chooseRole(rid: number, server?: string): Promise<any> {
     if (!this.network) {
       throw new Error('Network not initialized');
     }
 
+    console.log("当前选择的服务器:", this.currentServer);
     try {
-      const data = { rid };
+      const serverParam = server || this.currentServer?.server;
+      if (!serverParam) {
+        throw new Error('No server specified and no current server selected');
+      }
+
+      const data = {
+        rid,
+        server: serverParam
+      };
       console.log("开始选择角色", data);
       const response = await this.network.call('login.choose_role', data);
       console.log("选择角色成功", response);
@@ -323,62 +379,6 @@ export class NetworkService {
       console.error('登出失败:', error);
       throw error;
     }
-  }
-
-  /**
-   * 发送游戏动作
-   * @param actionType 动作类型
-   * @param actionData 动作数据
-   */
-  public async sendGameAction(actionType: string, actionData: any): Promise<any> {
-    if (!this.network) {
-      throw new Error('Network not initialized');
-    }
-
-    const gameAction = {
-      actionType: actionType,
-      data: actionData,
-      timestamp: Date.now()
-    };
-
-    try {
-      return await this.network.call('game_action', gameAction);
-    } catch (error) {
-      console.error('Failed to send game action:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 发送聊天消息
-   * @param message 消息内容
-   * @param channel 频道，默认为'global'
-   */
-  public sendChat(message: string, channel: string = 'global'): boolean {
-    if (!this.network) {
-      console.error('Network not initialized');
-      return false;
-    }
-
-    const chatData = {
-      message: message,
-      channel: channel,
-      timestamp: Date.now()
-    };
-
-    return this.network.send('chat', chatData);
-  }
-
-  /**
-   * 发送心跳
-   */
-  public sendHeartbeat(): boolean {
-    if (!this.network) {
-      console.error('Network not initialized');
-      return false;
-    }
-
-    return this.network.send('heartbeat', { timestamp: Date.now() });
   }
 
   /**
@@ -441,6 +441,54 @@ export class NetworkService {
   public setReconnectConfig(maxAttempts: number, initialDelay: number = 1000): void {
     this.maxReconnectAttempts = maxAttempts;
     this.reconnectDelay = initialDelay;
+  }
+
+  /**
+   * 切换到指定的角色节点
+   * @param url WebSocket服务器地址
+   * @param rolenodeid 角色节点ID
+   * @param token JWT令牌
+   */
+  public async switchToRoleNode(url: string, rolenodeid: string, token: string): Promise<boolean> {
+    try {
+      console.log('Switching to rolenode:', rolenodeid, 'url:', url);
+
+      // 先登出当前连接
+      this.logout();
+
+      // 等待一段时间确保连接完全断开
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // 连接到新的角色节点
+      const connectSuccess = await this.connect(url, rolenodeid);
+      if (!connectSuccess) {
+        throw new Error('连接新角色节点失败');
+      }
+
+      // 设置当前服务器（使用rolenodeid作为服务器ID）
+      const setServerSuccess = this.setCurrentServer(rolenodeid);
+      if (!setServerSuccess) {
+        throw new Error('设置当前服务器失败');
+      }
+
+      // 重新发送登录请求
+      const loginResponse = await this.login(token);
+      if (!loginResponse) {
+        throw new Error('重新登录失败');
+      }
+
+      // 检查登录响应
+      if (loginResponse.code === 0) {
+        console.log('Successfully switched to rolenode:', rolenodeid);
+        return true;
+      } else {
+        throw new Error(`重新登录失败，错误码: ${loginResponse.code}`);
+      }
+
+    } catch (error) {
+      console.error('Failed to switch rolenode:', error);
+      throw error;
+    }
   }
 
   /**

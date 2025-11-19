@@ -2,15 +2,17 @@
   {
     "id": "rolenode1",
     "name": "测试服务器1",
+    "server": "s1",
     "wsUrl": "ws://localhost:1249"
   },
   {
-    "id": "role2", 
+    "id": "rolenode2", 
     "name": "测试服务器2",
+    "server": "s2",
     "wsUrl": "ws://localhost:1249"
   },
   {
-    "id": "server3",
+    "id": "s3",
     "name": "正式服务器",
     "wsUrl": "ws://game.example.com:8080/ws"
   }

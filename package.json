@@ -6,7 +6,7 @@
   "scripts": {
     "build": "bun build src/main.ts --outdir dist --target browser && cp -r public/* dist/ && cp index.html dist/",
     "dev": "bun --watch build src/main.ts --outdir dist --target browser && cp -r public/* dist/ && cp index.html dist/",
-    "serve": "bunx serve dist -p 3000"
+    "serve": "bun build src/main.ts --outdir dist --target browser && cp -r public/* dist/ && cp index.html dist/ && bunx serve dist -p 3000"
   },
   "keywords": ["phaser", "game", "typescript", "bun"],
   "author": "",

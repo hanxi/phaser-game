@@ -1,15 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG, UI_CONFIG } from '../config/app';
 import { NetworkService } from '../services/NetworkService';
-
-/**
- * 服务器信息接口
- */
-interface ServerInfo {
-    id: string;
-    name: string;
-    wsUrl: string;
-}
+import { ServerDataService, ServerInfo } from '../services/ServerDataService';
 
 /**
  * 选服场景数据接口
@@ -32,12 +24,13 @@ export class ServerSelectScene extends Phaser.Scene {
     private serverButtons: Phaser.GameObjects.Container[] = [];
     private serverButtonBgs: Phaser.GameObjects.Rectangle[] = [];
     private connectingText: Phaser.GameObjects.Text | null = null;
-    private serverIdMap: Map<string, ServerInfo> = new Map(); // 添加id到ServerInfo的映射
-    private isSwitchingGameNode: boolean = false; // 添加标志位防止递归死循环
+    private serverDataService: ServerDataService;
+    private isSwitchingRoleNode: boolean = false; // 添加标志位防止递归死循环
 
     constructor() {
         super({ key: 'ServerSelectScene' });
         this.networkService = (window as any).networkService;
+        this.serverDataService = ServerDataService.getInstance();
     }
 
     /**
@@ -65,6 +58,9 @@ export class ServerSelectScene extends Phaser.Scene {
             return;
         }
 
+        // 初始化服务器数据服务
+        this.serverDataService.initialize(this.servers);
+
         // 创建选服界面
         this.createServerSelectUI();
     }
@@ -74,12 +70,6 @@ export class ServerSelectScene extends Phaser.Scene {
      */
     private createServerSelectUI(): void {
         const { width, height } = this.scale.gameSize;
-
-        // 建立id到ServerInfo的映射关系
-        this.serverIdMap.clear();
-        this.servers.forEach(server => {
-            this.serverIdMap.set(server.id, server);
-        });
 
         // 标题
         const titleText = this.add.text(width / 2, height * 0.15, '选择服务器', {
@@ -212,6 +202,12 @@ export class ServerSelectScene extends Phaser.Scene {
                 throw new Error('连接服务器失败');
             }
 
+            // 设置当前选择的服务器
+            const setServerSuccess = this.networkService.setCurrentServer(server.id);
+            if (!setServerSuccess) {
+                throw new Error('设置当前服务器失败');
+            }
+
             // 发送登录请求
             const token = this.sceneData?.tokens?.access_token || '';
             console.log("token", token);
@@ -224,10 +220,13 @@ export class ServerSelectScene extends Phaser.Scene {
 
             if (loginSuccess.code === 0) {
                 await this.handleLoginResponse(loginSuccess);
-            } else if (loginSuccess.gamenode && !this.isSwitchingGameNode) {
-                // login 协议也需要处理 gamenode 切换
-                console.log('Login response indicates need to switch to gamenode:', loginSuccess.gamenode);
-                await this.switchToGameNode(loginSuccess.gamenode);
+            } else if (loginSuccess.rolenode && !this.isSwitchingRoleNode) {
+                // login 协议也需要处理 rolenode 切换
+                console.log('Login response indicates need to switch to rolenode:', loginSuccess.rolenode);
+                await this.switchToRoleNode(loginSuccess.rolenode);
+            } else if (this.isSwitchingRoleNode && loginSuccess.rolenode) {
+                // 如果已经在切换游戏节点过程中，再次要求切换则报错
+                throw new Error('检测到游戏节点切换循环，可能存在服务器配置问题');
             } else {
                 throw new Error(`登录失败，错误码: ${loginSuccess.code}`);
             }
@@ -260,12 +259,12 @@ export class ServerSelectScene extends Phaser.Scene {
                 if (chooseResponse.code === 0) {
                     // 选择角色成功，跳转到游戏场景
                     this.switchToGameScene();
-                } else if (chooseResponse.gamenode && !this.isSwitchingGameNode) {
+                } else if (chooseResponse.rolenode && !this.isSwitchingRoleNode) {
                     // 需要切换到其他游戏节点，且当前不在切换过程中
-                    // 不管 code 是否为 0，只要有 gamenode 字段就需要切换
-                    console.log('Need to switch to gamenode:', chooseResponse.gamenode);
-                    await this.switchToGameNode(chooseResponse.gamenode);
-                } else if (this.isSwitchingGameNode && chooseResponse.gamenode) {
+                    // 不管 code 是否为 0，只要有 rolenode 字段就需要切换
+                    console.log('Need to switch to rolenode:', chooseResponse.rolenode);
+                    await this.switchToRoleNode(chooseResponse.rolenode);
+                } else if (this.isSwitchingRoleNode && chooseResponse.rolenode) {
                     // 如果已经在切换游戏节点过程中，再次要求切换则报错
                     throw new Error('检测到游戏节点切换循环，可能存在服务器配置问题');
                 } else {
@@ -282,7 +281,7 @@ export class ServerSelectScene extends Phaser.Scene {
             this.setButtonsEnabled(true);
             this.hideConnecting();
             // 重置标志位
-            this.isSwitchingGameNode = false;
+            this.isSwitchingRoleNode = false;
         }
     }
 
@@ -290,8 +289,8 @@ export class ServerSelectScene extends Phaser.Scene {
      * 切换到游戏场景
      */
     private switchToGameScene(): void {
-        // 重置游戏节点切换标志位
-        this.isSwitchingGameNode = false;
+        // 重置角色节点切换标志位
+        this.isSwitchingRoleNode = false;
         
         // 传递数据到游戏场景
         const gameData = {
@@ -318,55 +317,37 @@ export class ServerSelectScene extends Phaser.Scene {
     }
 
     /**
-     * 切换到指定的游戏节点
+     * 切换到指定的角色节点
      */
-    private async switchToGameNode(gamenode: string): Promise<void> {
+    private async switchToRoleNode(rolenode: string): Promise<void> {
         try {
-            console.log('Switching to gamenode:', gamenode, this.serverIdMap);
+            console.log('Switching to rolenode:', rolenode);
             
-            // 设置标志位，表示正在切换游戏节点
-            this.isSwitchingGameNode = true;
+            // 设置标志位，表示正在切换角色节点
+            this.isSwitchingRoleNode = true;
             
-            // 检查gamenode是否在映射关系中
-            const targetServer = this.serverIdMap.get(gamenode);
+            // 使用ServerDataService检查rolenode是否存在
+            const targetServer = this.serverDataService.getServerById(rolenode);
             if (!targetServer) {
-                throw new Error(`游戏节点 "${gamenode}" 不存在于服务器列表中`);
+                throw new Error(`角色节点 "${rolenode}" 不存在于服务器列表中`);
             }
             
-            // 先登出当前连接
-            this.networkService.logout();
-            
-            // 等待一段时间确保连接完全断开
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // 使用对应的ServerInfo重新连接到新的游戏节点
-            const connectSuccess = await this.networkService.connect(targetServer.wsUrl, targetServer.id);
-            if (!connectSuccess) {
-                throw new Error('连接新游戏节点失败');
-            }
-
-            // 重新发送登录请求
+            // 获取token
             const token = this.sceneData?.tokens?.access_token || '';
-            const loginResponse = await this.networkService.login(token);
-            if (!loginResponse) {
-                throw new Error('重新登录失败');
-            }
-
-            // 检查登录响应
-            if (loginResponse.code === 0) {
-                // 登录成功，重新处理完整的登录流程
-                await this.handleLoginResponse(loginResponse);
-            } else {
-                throw new Error(`重新登录失败，错误码: ${loginResponse.code}`);
-            }
+            
+            // 调用NetworkService的switchToRoleNode方法
+            await this.networkService.switchToRoleNode(targetServer.wsUrl, targetServer.id, token);
+            
+            // 切换成功，重新处理完整的登录流程
+            await this.handleLoginResponse({ code: 0 });
             
         } catch (error) {
-            console.error('Failed to switch gamenode:', error);
-            this.showError(`切换游戏节点失败: ${error}`);
+            console.error('Failed to switch rolenode:', error);
+            this.showError(`切换角色节点失败: ${error}`);
             this.setButtonsEnabled(true);
             this.hideConnecting();
             // 重置标志位
-            this.isSwitchingGameNode = false;
+            this.isSwitchingRoleNode = false;
         }
     }
 

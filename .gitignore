@@ -97,3 +97,7 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+
+sconn-client/
+sproto-js/
+
