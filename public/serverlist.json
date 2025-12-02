@@ -1,19 +1,20 @@
-[
-  {
-    "id": "rolenode1",
-    "name": "测试服务器1",
-    "server": "s1",
-    "wsUrl": "ws://localhost:1249"
-  },
-  {
-    "id": "rolenode2", 
-    "name": "测试服务器2",
-    "server": "s2",
-    "wsUrl": "ws://localhost:1249"
-  },
-  {
-    "id": "s3",
-    "name": "正式服务器",
-    "wsUrl": "ws://game.example.com:8080/ws"
-  }
-]
+{
+    "servers": {
+        "s1": {
+            "name": "测试服务器1",
+            "server": "s1"
+        },
+        "s2": {
+            "name": "测试服务器2",
+            "server": "s2"
+        }
+    },
+    "rolenodes": {
+        "rolenode1": "ws://localhost:1249",
+        "rolenode2": "ws://localhost:1249"
+    },
+    "account_hosts": [
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:8081"
+    ]
+}
