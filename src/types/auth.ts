@@ -51,3 +51,50 @@ export interface LoginButtonConfig {
   y: number;
   color: number;
 }
+
+/**
+ * 角色信息接口
+ */
+export interface RoleInfo {
+  rid: number;
+  name: string;
+  server: string;
+  rolenode: string;
+  level?: number;
+  created_at?: string;
+}
+
+/**
+ * 获取角色列表响应接口
+ */
+export interface GetRolesResponse {
+  code: number;
+  roles: RoleInfo[];
+  message?: string;
+}
+
+/**
+ * 创建角色请求接口
+ */
+export interface CreateRoleRequest {
+  token: string;
+  server: string;
+  name: string;
+}
+
+/**
+ * 创建角色响应接口
+ */
+export interface CreateRoleResponse {
+  code: number;
+  role?: RoleInfo;
+  message?: string;
+}
+
+/**
+ * Account服务配置接口
+ */
+export interface AccountServiceConfig {
+  timeout: number;
+  maxRetries: number;
+}

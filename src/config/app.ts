@@ -56,6 +56,17 @@ export const GAME_CONFIG = {
 } as const;
 
 /**
+ * Account 服务配置
+ */
+export const ACCOUNT_SERVICE = {
+  // 请求超时时间（毫秒）
+  TIMEOUT: 10000,
+  
+  // 最大重试次数
+  MAX_RETRIES: 3
+} as const;
+
+/**
  * UI 配置
  */
 export const UI_CONFIG = {

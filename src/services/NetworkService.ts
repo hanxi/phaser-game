@@ -257,14 +257,11 @@ export class NetworkService {
 
 
     try {
-      const ctx = {
+      const data = {
+        token,
         rid: rid,
         proto_checksum: this.checksum,
         server: this.currentServer.server, // 使用server字段
-      };
-      const data = {
-        token,
-        ctx,
       };
 
       console.log("开始登录", data);
@@ -277,58 +274,7 @@ export class NetworkService {
     }
   }
 
-  /**
-   * 获取角色列表
-   * @param server 服务器ID，如果不提供则使用当前选择的服务器
-   */
-  public async getRoles(server?: string): Promise<any> {
-    if (!this.network) {
-      throw new Error('Network not initialized');
-    }
 
-    try {
-      const serverParam = server || this.currentServer?.server || '';
-      const data = { server: serverParam };
-
-      console.log("开始获取角色列表", data);
-      const response = await this.network.call('login.get_roles', data);
-      console.log("获取角色列表成功", response);
-      return response;
-    } catch (error) {
-      console.error('获取角色列表失败:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 创建角色
-   * @param name 角色名称
-   * @param server 服务器ID，如果不提供则使用当前选择的服务器
-   */
-  public async createRole(name: string, server?: string): Promise<any> {
-    if (!this.network) {
-      throw new Error('Network not initialized');
-    }
-
-    try {
-      const serverParam = server || this.currentServer?.server;
-      if (!serverParam) {
-        throw new Error('No server specified and no current server selected');
-      }
-
-      const data = {
-        name,
-        server: serverParam
-      };
-      console.log("开始创建角色", data);
-      const response = await this.network.call('login.create_role', data);
-      console.log("创建角色成功", response);
-      return response;
-    } catch (error) {
-      console.error('创建角色失败:', error);
-      throw error;
-    }
-  }
 
   /**
    * 选择角色
@@ -357,6 +303,26 @@ export class NetworkService {
       return response;
     } catch (error) {
       console.error('选择角色失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取角色详细信息
+   * 发送role.login_info消息获取角色详情
+   */
+  public async getRoleLoginInfo(): Promise<any> {
+    if (!this.network) {
+      throw new Error('Network not initialized');
+    }
+
+    try {
+      console.log("开始获取角色详细信息");
+      const response = await this.network.call('role.login_info');
+      console.log("获取角色详细信息成功", response);
+      return response;
+    } catch (error) {
+      console.error('获取角色详细信息失败:', error);
       throw error;
     }
   }
@@ -443,53 +409,6 @@ export class NetworkService {
     this.reconnectDelay = initialDelay;
   }
 
-  /**
-   * 切换到指定的角色节点
-   * @param url WebSocket服务器地址
-   * @param rolenodeid 角色节点ID
-   * @param token JWT令牌
-   */
-  public async switchToRoleNode(url: string, rolenodeid: string, token: string): Promise<boolean> {
-    try {
-      console.log('Switching to rolenode:', rolenodeid, 'url:', url);
-
-      // 先登出当前连接
-      this.logout();
-
-      // 等待一段时间确保连接完全断开
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // 连接到新的角色节点
-      const connectSuccess = await this.connect(url, rolenodeid);
-      if (!connectSuccess) {
-        throw new Error('连接新角色节点失败');
-      }
-
-      // 设置当前服务器（使用rolenodeid作为服务器ID）
-      const setServerSuccess = this.setCurrentServer(rolenodeid);
-      if (!setServerSuccess) {
-        throw new Error('设置当前服务器失败');
-      }
-
-      // 重新发送登录请求
-      const loginResponse = await this.login(token);
-      if (!loginResponse) {
-        throw new Error('重新登录失败');
-      }
-
-      // 检查登录响应
-      if (loginResponse.code === 0) {
-        console.log('Successfully switched to rolenode:', rolenodeid);
-        return true;
-      } else {
-        throw new Error(`重新登录失败，错误码: ${loginResponse.code}`);
-      }
-
-    } catch (error) {
-      console.error('Failed to switch rolenode:', error);
-      throw error;
-    }
-  }
 
   /**
    * 获取Network实例（用于高级操作）
