@@ -155,6 +155,7 @@ export const OAUTH_CONFIG = {
 - [Phaser 3 文档](https://photonstorm.github.io/phaser3-docs/)
 - [TypeScript 手册](https://www.typescriptlang.org/docs/)
 - [Bun 文档](https://bun.sh/docs)
+- [登录流程文档](doc.md) - 详细的登录流程和协议规范
 
 ## 🐛 故障排除
 

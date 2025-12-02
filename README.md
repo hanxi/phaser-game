@@ -155,6 +155,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Phaser 3 Documentation](https://photonstorm.github.io/phaser3-docs/)
 - [TypeScript Handbook](https://www.typescriptlang.org/docs/)
 - [Bun Documentation](https://bun.sh/docs)
+- [Login Flow Documentation](doc.md) - Detailed login flow and protocol specifications
 
 ## 🐛 Troubleshooting
 
