@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GAME_CONFIG, UI_CONFIG } from '../config/app';
 import { NetworkService } from '../services/NetworkService';
 import { ServerDataService, ServerInfo, ServerListConfig } from '../services/ServerDataService';
-import { AccountService } from '../services/AccountService';
+import { ResourceManager } from '../managers/ResourceManager';
 import { RoleInfo } from '../types/auth';
 
 /**
@@ -16,7 +16,8 @@ interface ServerSelectSceneData {
 
 /**
  * 服务器选择场景
- * 显示服务器列表，允许用户选择服务器并连接
+ * 服务器列表来自 account 的 GET /servers（不再写死在 serverlist.json 里），
+ * 选服后走 SDK：/roles 查角色 → enterGame（内部 /gates 发现网关、WS 直连、登录）
  */
 export class ServerSelectScene extends Phaser.Scene {
     private servers: ServerInfo[] = [];
@@ -27,13 +28,11 @@ export class ServerSelectScene extends Phaser.Scene {
     private serverButtonBgs: Phaser.GameObjects.Rectangle[] = [];
     private connectingText: Phaser.GameObjects.Text | null = null;
     private serverDataService: ServerDataService;
-    private accountService: AccountService;
 
     constructor() {
         super({ key: 'ServerSelectScene' });
         this.networkService = (window as any).networkService;
         this.serverDataService = ServerDataService.getInstance();
-        this.accountService = AccountService.getInstance({ timeout: 10000, maxRetries: 3 });
     }
 
     /**
@@ -45,7 +44,7 @@ export class ServerSelectScene extends Phaser.Scene {
     }
 
     preload() {
-        // 加载服务器列表
+        // serverlist.json 现在只有 account_hosts；服务器列表走 GET /servers
         this.load.json('serverlist', GAME_CONFIG.SERVER_LIST.URL);
     }
 
@@ -53,24 +52,55 @@ export class ServerSelectScene extends Phaser.Scene {
         // 设置背景色
         this.cameras.main.setBackgroundColor(GAME_CONFIG.BACKGROUND_COLOR);
 
-        // 获取服务器列表配置数据
         const serverListConfig: ServerListConfig = this.cache.json.get('serverlist');
-        
-        if (!serverListConfig || !serverListConfig.servers) {
-            this.showError('无法加载服务器列表');
+
+        if (!serverListConfig || !serverListConfig.account_hosts?.length) {
+            this.showError('无法加载服务器列表配置');
             return;
         }
 
-        // 初始化服务器数据服务
-        this.serverDataService.initialize(serverListConfig);
+        try {
+            // 初始化服务器数据服务（Account HTTP 层）
+            this.serverDataService.initialize(serverListConfig);
 
-        // 初始化账户服务
-        this.accountService.initialize(serverListConfig.account_hosts);
+            // 初始化网络服务（skyext-client SDK）：spb + account hosts
+            const resourceManager = ResourceManager.getInstance();
+            const spbData = resourceManager.getResource<ArrayBuffer>('protocol/sproto.spb');
+            if (!spbData) {
+                throw new Error('协议文件未加载（protocol/sproto.spb）');
+            }
+            if (!this.networkService.initialize(new Uint8Array(spbData), this.serverDataService.getAccountHosts())) {
+                throw new Error('网络服务初始化失败');
+            }
 
-        // 获取服务器列表
-        this.servers = this.serverDataService.getServers();
+            const token = this.sceneData?.tokens?.access_token || '';
+            if (!token) {
+                throw new Error('未找到访问令牌');
+            }
+            this.networkService.setToken(token);
+        } catch (error) {
+            this.showError(`初始化失败: ${error}`);
+            return;
+        }
 
-        // 创建选服界面
+        // 拉取服务器列表并渲染（异步）
+        this.loadServers();
+    }
+
+    /**
+     * 从 account 拉取服务器列表
+     */
+    private async loadServers(): Promise<void> {
+        this.showConnecting('获取服务器列表');
+        const servers = await this.serverDataService.loadServers();
+        this.hideConnecting();
+
+        if (!servers || servers.length === 0) {
+            this.showError('获取服务器列表失败（account 不可用或列表为空）');
+            return;
+        }
+
+        this.servers = servers;
         this.createServerSelectUI();
     }
 
@@ -112,14 +142,16 @@ export class ServerSelectScene extends Phaser.Scene {
      */
     private createServerButton(server: ServerInfo, x: number, y: number): { container: Phaser.GameObjects.Container, background: Phaser.GameObjects.Rectangle } {
         const buttonContainer = this.add.container(x, y);
-        
-        // 按钮背景
-        const buttonBg = this.add.rectangle(0, 0, 400, 60, 0x3498db);
+        const isOpen = server.status === 'open';
+
+        // 按钮背景（未开放的服置灰）
+        const buttonBg = this.add.rectangle(0, 0, 400, 60, isOpen ? 0x3498db : 0x7f8c8d);
         buttonBg.setStrokeStyle(2, 0xffffff);
         buttonContainer.add(buttonBg);
-        
-        // 服务器名称文本
-        const serverText = this.add.text(0, 0, server.name, {
+
+        // 服务器名称文本（推荐服带标记）
+        const label = server.name + (server.recommended ? '（推荐）' : '') + (isOpen ? '' : `［${server.status}］`);
+        const serverText = this.add.text(0, 0, label, {
             fontSize: 20,
             color: '#ffffff',
             fontFamily: 'Arial Black',
@@ -127,23 +159,25 @@ export class ServerSelectScene extends Phaser.Scene {
         });
         serverText.setOrigin(0.5);
         buttonContainer.add(serverText);
-        
-        // 添加交互
-        buttonBg.setInteractive();
-        buttonBg.on('pointerdown', () => {
-            this.selectServer(server);
-        });
-        
-        // 悬停效果
-        buttonBg.on('pointerover', () => {
-            buttonBg.setFillStyle(0x2980b9);
-            buttonContainer.setScale(1.05);
-        });
-        
-        buttonBg.on('pointerout', () => {
-            buttonBg.setFillStyle(0x3498db);
-            buttonContainer.setScale(1);
-        });
+
+        // 添加交互（建角只能选 open 的服）
+        if (isOpen) {
+            buttonBg.setInteractive();
+            buttonBg.on('pointerdown', () => {
+                this.selectServer(server);
+            });
+
+            // 悬停效果
+            buttonBg.on('pointerover', () => {
+                buttonBg.setFillStyle(0x2980b9);
+                buttonContainer.setScale(1.05);
+            });
+
+            buttonBg.on('pointerout', () => {
+                buttonBg.setFillStyle(0x3498db);
+                buttonContainer.setScale(1);
+            });
+        }
 
         return { container: buttonContainer, background: buttonBg };
     }
@@ -153,12 +187,12 @@ export class ServerSelectScene extends Phaser.Scene {
      */
     private createBackButton(width: number, height: number): void {
         const buttonContainer = this.add.container(width / 2, height * 0.85);
-        
+
         // 按钮背景
         const buttonBg = this.add.rectangle(0, 0, 200, 50, 0xe74c3c);
         buttonBg.setStrokeStyle(2, 0xffffff);
         buttonContainer.add(buttonBg);
-        
+
         // 按钮文本
         const buttonText = this.add.text(0, 0, '返回登录', {
             fontSize: 18,
@@ -168,25 +202,25 @@ export class ServerSelectScene extends Phaser.Scene {
         });
         buttonText.setOrigin(0.5);
         buttonContainer.add(buttonText);
-        
+
         // 添加交互
         buttonBg.setInteractive();
         buttonBg.on('pointerdown', () => {
             this.backToLogin();
         });
-        
+
         // 悬停效果
         buttonBg.on('pointerover', () => {
             buttonContainer.setScale(1.05);
         });
-        
+
         buttonBg.on('pointerout', () => {
             buttonContainer.setScale(1);
         });
     }
 
     /**
-     * 选择服务器
+     * 选择服务器：查该服的角色列表，有角色直接进游戏，没有就去建角
      */
     private async selectServer(server: ServerInfo): Promise<void> {
         this.selectedServer = server;
@@ -205,21 +239,25 @@ export class ServerSelectScene extends Phaser.Scene {
                 throw new Error('未找到访问令牌');
             }
 
-            // 通过HTTP获取角色列表
-            console.log('Getting roles via HTTP...');
-            const rolesResponse = await this.accountService.getRoles(token);
-            
-            if (rolesResponse.code !== 0) {
-                throw new Error(`获取角色列表失败，错误码: ${rolesResponse.code}`);
+            // 通过 account HTTP 获取该服的角色列表（token 在 Authorization 头里，
+            // 不进 URL；rid 超 2^53 时 SDK 解成 bigint，全程无损）
+            const account = this.serverDataService.account;
+            if (!account) {
+                throw new Error('Account 服务未初始化');
+            }
+            const roles = await account.roles(token, server.server);
+
+            if (!roles) {
+                throw new Error('获取角色列表失败（account 不可用）');
             }
 
-            if (rolesResponse.roles && rolesResponse.roles.length > 0) {
+            if (roles.length > 0) {
                 // 有角色，选择第一个角色进行登录
-                const selectedRole = rolesResponse.roles[0];
-                await this.loginWithRole(selectedRole, token);
+                await this.loginWithRole(roles[0]);
             } else {
                 // 没有角色，跳转到角色创建场景
                 console.log('No roles found, switching to role creation scene');
+                this.hideConnecting();
                 this.switchToRoleCreateScene();
             }
 
@@ -232,44 +270,16 @@ export class ServerSelectScene extends Phaser.Scene {
     }
 
     /**
-     * 使用角色登录到游戏服务器
+     * 使用角色登录到游戏服务器：SDK 的 enterGame 走 /gates 发现在线网关、
+     * WS 直连（失败自动换下一台）、login.login。之后断线自动续接
      */
-    private async loginWithRole(role: RoleInfo, token: string): Promise<void> {
+    private async loginWithRole(role: RoleInfo): Promise<void> {
         try {
             console.log('Logging in with role:', role);
 
-            // 设置当前服务器到NetworkService
-            if (!this.selectedServer) {
-                throw new Error('未选择服务器');
-            }
-            
-            const serverSetSuccess = this.networkService.setCurrentServer(this.selectedServer.server);
-            if (!serverSetSuccess) {
-                throw new Error('设置当前服务器失败');
-            }
-
-            // 获取角色对应的rolenode WebSocket URL
-            const rolenodeUrl = this.serverDataService.getRolenodeUrl(role.rolenode);
-            if (!rolenodeUrl) {
-                throw new Error(`未找到角色节点 ${role.rolenode} 的WebSocket地址`);
-            }
-
-            // 初始化网络服务
-            const initSuccess = await this.networkService.initialize();
-            if (!initSuccess) {
-                throw new Error('网络服务初始化失败');
-            }
-
-            // 连接到角色节点
-            const connectSuccess = await this.networkService.connect(rolenodeUrl, role.rolenode);
-            if (!connectSuccess) {
-                throw new Error('连接角色节点失败');
-            }
-
-            // 发送login.login消息
-            const loginResponse = await this.networkService.login(token, role.rid);
-            if (loginResponse.code !== 0) {
-                throw new Error(`WebSocket登录失败，错误码: ${loginResponse.code}`);
+            const ok = await this.networkService.enterGame(role.rid, role.server);
+            if (!ok) {
+                throw new Error('连接网关失败（/gates 无在线网关或登录被拒）');
             }
 
             console.log('WebSocket login successful');
@@ -323,11 +333,11 @@ export class ServerSelectScene extends Phaser.Scene {
      */
     private showConnecting(serverName: string): void {
         const { width, height } = this.scale.gameSize;
-        
+
         this.connectingText = this.add.text(
-            width / 2, 
-            height * 0.75, 
-            `正在连接到 ${serverName}...`, 
+            width / 2,
+            height * 0.75,
+            `正在连接到 ${serverName}...`,
             {
                 fontSize: 18,
                 color: '#f39c12',
@@ -355,11 +365,11 @@ export class ServerSelectScene extends Phaser.Scene {
      */
     private showError(message: string): void {
         const { width, height } = this.scale.gameSize;
-        
+
         const errorText = this.add.text(
-            width / 2, 
-            height * 0.9, 
-            message, 
+            width / 2,
+            height * 0.9,
+            message,
             {
                 fontSize: 18,
                 color: '#ff6b6b',
@@ -386,9 +396,13 @@ export class ServerSelectScene extends Phaser.Scene {
             if (!bg || !bg.scene || bg.scene !== this) {
                 return;
             }
-            
+
             if (enabled) {
                 bg.setAlpha(1);
+                if (bg.input === null) {
+                    // 未开放的服本来就没有交互，不恢复
+                    return;
+                }
                 bg.setInteractive();
             } else {
                 bg.setAlpha(0.5);
@@ -405,7 +419,7 @@ export class ServerSelectScene extends Phaser.Scene {
         if (this.networkService.connected) {
             this.networkService.disconnect();
         }
-        
+
         // 返回登录场景
         this.scene.start('LoginScene');
     }

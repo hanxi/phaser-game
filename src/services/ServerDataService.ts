@@ -1,34 +1,23 @@
-/**
- * 服务器信息接口
- */
-export interface ServerInfo {
-    id: string;
-    name: string;
-    server: string;
-    wsUrl: string;
-}
+import { AccountClient, type ServerInfo } from 'skyext-client';
 
 /**
- * 服务器列表配置接口
+ * serverlist.json 现在只有 account_hosts 一个字段：
+ *
+ *   { "account_hosts": ["http://127.0.0.1:8080"] }
+ *
+ * 服务器列表来自 GET /servers（含状态/推荐标记），网关地址来自 GET /gates
+ * （SDK 的 enterGame 内部自动获取并轮换直连）。网关地址不写死在客户端配置
+ * 里，列表里只会有真的在线的网关（docs/guide/client_protocol.md 第 1 节）。
  */
 export interface ServerListConfig {
-    servers: Record<string, {
-        name: string;
-        server: string;
-    }>;
-    rolenodes: Record<string, string>;
     account_hosts: string[];
 }
 
-/**
- * 服务器数据服务
- * 统一管理服务器列表和映射关系
- */
+export type { ServerInfo };
+
 export class ServerDataService {
     private static instance: ServerDataService;
-    private servers: ServerInfo[] = [];
-    private serverIdMap: Map<string, ServerInfo> = new Map();
-    private rolenodeMap: Map<string, string> = new Map();
+    private accountClient: AccountClient | null = null;
     private accountHosts: string[] = [];
     private isInitialized: boolean = false;
 
@@ -36,9 +25,6 @@ export class ServerDataService {
         // 私有构造函数，确保单例模式
     }
 
-    /**
-     * 获取单例实例
-     */
     public static getInstance(): ServerDataService {
         if (!ServerDataService.instance) {
             ServerDataService.instance = new ServerDataService();
@@ -47,135 +33,41 @@ export class ServerDataService {
     }
 
     /**
-     * 初始化服务器数据
-     * @param config 服务器列表配置
+     * 初始化（serverlist.json 加载后调用一次）
      */
     public initialize(config: ServerListConfig): void {
-        // 清空现有数据
-        this.servers = [];
-        this.serverIdMap.clear();
-        this.rolenodeMap.clear();
-        this.accountHosts = [];
-        
-        // 处理服务器列表
-        Object.entries(config.servers).forEach(([serverId, serverConfig]) => {
-            const serverInfo: ServerInfo = {
-                id: serverId,
-                name: serverConfig.name,
-                server: serverConfig.server,
-                wsUrl: '' // 将在需要时通过rolenode映射获取
-            };
-            this.servers.push(serverInfo);
-            this.serverIdMap.set(serverId, serverInfo);
-        });
-        
-        // 处理rolenode映射
-        Object.entries(config.rolenodes).forEach(([rolenodeId, wsUrl]) => {
-            this.rolenodeMap.set(rolenodeId, wsUrl);
-        });
-        
-        // 处理account_hosts
+        if (!config.account_hosts || config.account_hosts.length === 0) {
+            throw new Error('serverlist.json 缺少 account_hosts');
+        }
         this.accountHosts = [...config.account_hosts];
-        
+        this.accountClient = new AccountClient({ hosts: this.accountHosts });
         this.isInitialized = true;
-        console.log('ServerDataService initialized with', this.servers.length, 'servers,', 
-                   this.rolenodeMap.size, 'rolenodes, and', this.accountHosts.length, 'account hosts');
+        console.log('ServerDataService initialized with', this.accountHosts.length, 'account hosts');
+    }
+
+    /** Account HTTP 层（roles / createRole / gates 也在这里） */
+    public get account(): AccountClient | null {
+        return this.accountClient;
     }
 
     /**
-     * 获取所有服务器列表
+     * 从 account 拉取服务器列表（GET /servers）。失败返回 null
      */
-    public getServers(): ServerInfo[] {
-        return [...this.servers]; // 返回副本，防止外部修改
+    public async loadServers(): Promise<ServerInfo[] | null> {
+        return this.accountClient?.servers() ?? null;
     }
 
-    /**
-     * 根据ID获取服务器信息
-     * @param serverId 服务器ID
-     */
-    public getServerById(serverId: string): ServerInfo | undefined {
-        return this.serverIdMap.get(serverId);
-    }
-
-    /**
-     * 检查服务器是否存在
-     * @param serverId 服务器ID
-     */
-    public hasServer(serverId: string): boolean {
-        return this.serverIdMap.has(serverId);
-    }
-
-    /**
-     * 获取服务器数量
-     */
-    public getServerCount(): number {
-        return this.servers.length;
-    }
-
-    /**
-     * 检查是否已初始化
-     */
-    public isReady(): boolean {
-        return this.isInitialized && this.servers.length > 0;
-    }
-
-    /**
-     * 清空数据
-     */
-    public clear(): void {
-        this.servers = [];
-        this.serverIdMap.clear();
-        this.isInitialized = false;
-    }
-
-    /**
-     * 根据rolenode获取WebSocket URL
-     * @param rolenodeId rolenode ID
-     */
-    public getRolenodeUrl(rolenodeId: string): string | undefined {
-        return this.rolenodeMap.get(rolenodeId);
-    }
-
-    /**
-     * 获取所有account_hosts
-     */
     public getAccountHosts(): string[] {
         return [...this.accountHosts];
     }
 
-    /**
-     * 检查rolenode是否存在
-     * @param rolenodeId rolenode ID
-     */
-    public hasRolenode(rolenodeId: string): boolean {
-        return this.rolenodeMap.has(rolenodeId);
+    public isReady(): boolean {
+        return this.isInitialized;
     }
 
-    /**
-     * 获取所有rolenode列表
-     */
-    public getRolenodes(): Record<string, string> {
-        const rolenodes: Record<string, string> = {};
-        this.rolenodeMap.forEach((url, id) => {
-            rolenodes[id] = url;
-        });
-        return rolenodes;
-    }
-
-    /**
-     * 获取服务器映射的调试信息
-     */
-    public getDebugInfo(): { 
-        serverCount: number; 
-        mappedIds: string[]; 
-        rolenodeCount: number; 
-        accountHostCount: number; 
-    } {
-        return {
-            serverCount: this.servers.length,
-            mappedIds: Array.from(this.serverIdMap.keys()),
-            rolenodeCount: this.rolenodeMap.size,
-            accountHostCount: this.accountHosts.length
-        };
+    public clear(): void {
+        this.accountClient = null;
+        this.accountHosts = [];
+        this.isInitialized = false;
     }
 }

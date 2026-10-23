@@ -1,9 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG, UI_CONFIG } from '../config/app';
 import { NetworkService } from '../services/NetworkService';
-import { ServerDataService, ServerInfo } from '../services/ServerDataService';
-import { AccountService } from '../services/AccountService';
-import { RoleInfo } from '../types/auth';
+import { ServerInfo, RoleInfo } from '../types/auth';
 
 /**
  * 角色创建场景数据接口
@@ -18,7 +16,8 @@ interface RoleCreateSceneData {
 
 /**
  * 角色创建场景
- * 允许用户创建新角色
+ * 允许用户创建新角色（POST /create_role，走 SDK 的 AccountClient），
+ * 创建成功后直接用 SDK enterGame 进游戏
  */
 export class RoleCreateScene extends Phaser.Scene {
     private sceneData: RoleCreateSceneData | null = null;
@@ -27,14 +26,10 @@ export class RoleCreateScene extends Phaser.Scene {
     private createButton: Phaser.GameObjects.Container | null = null;
     private errorText: Phaser.GameObjects.Text | null = null;
     private isCreating: boolean = false;
-    private serverDataService: ServerDataService;
-    private accountService: AccountService;
 
     constructor() {
         super({ key: 'RoleCreateScene' });
         this.networkService = (window as any).networkService;
-        this.serverDataService = ServerDataService.getInstance();
-        this.accountService = AccountService.getInstance({ timeout: 10000, maxRetries: 3 });
     }
 
     /**
@@ -98,24 +93,24 @@ export class RoleCreateScene extends Phaser.Scene {
         // 获取游戏画布的位置信息
         const canvas = this.game.canvas;
         const canvasRect = canvas.getBoundingClientRect();
-        
+
         // 计算画布的缩放比例
         const scaleX = canvasRect.width / width;
         const scaleY = canvasRect.height / height;
-        
+
         // 创建HTML输入框
         this.nameInput = document.createElement('input');
         this.nameInput.type = 'text';
         this.nameInput.placeholder = '输入角色名称';
         this.nameInput.maxLength = 20;
         this.nameInput.style.position = 'absolute';
-        
+
         // 根据画布缩放计算实际位置
         const inputWidth = 200;
         const inputHeight = 40;
         const inputX = canvasRect.left + (width / 2 - inputWidth / 2) * scaleX;
         const inputY = canvasRect.top + (height * 0.45) * scaleY;
-        
+
         this.nameInput.style.left = `${inputX}px`;
         this.nameInput.style.top = `${inputY}px`;
         this.nameInput.style.width = `${inputWidth * scaleX}px`;
@@ -149,10 +144,10 @@ export class RoleCreateScene extends Phaser.Scene {
                 const newCanvasRect = canvas.getBoundingClientRect();
                 const newScaleX = newCanvasRect.width / width;
                 const newScaleY = newCanvasRect.height / height;
-                
+
                 const newInputX = newCanvasRect.left + (width / 2 - inputWidth / 2) * newScaleX;
                 const newInputY = newCanvasRect.top + (height * 0.45) * newScaleY;
-                
+
                 this.nameInput!.style.left = `${newInputX}px`;
                 this.nameInput!.style.top = `${newInputY}px`;
                 this.nameInput!.style.width = `${inputWidth * newScaleX}px`;
@@ -160,9 +155,9 @@ export class RoleCreateScene extends Phaser.Scene {
                 this.nameInput!.style.fontSize = `${18 * Math.min(newScaleX, newScaleY)}px`;
             }
         };
-        
+
         window.addEventListener('resize', resizeHandler);
-        
+
         // 存储resize处理器以便清理
         (this.nameInput as any).resizeHandler = resizeHandler;
     }
@@ -267,36 +262,32 @@ export class RoleCreateScene extends Phaser.Scene {
             // 获取JWT令牌和服务器信息
             const token = this.sceneData?.tokens?.access_token || '';
             const selectedServer = this.sceneData?.selectedServer;
-            
+
             if (!token) {
                 throw new Error('未找到访问令牌');
             }
-            
+
             if (!selectedServer) {
                 throw new Error('未找到选择的服务器');
             }
 
             console.log('Creating role with name:', roleName);
-            
-            // 通过HTTP创建角色
-            const createResponse = await this.accountService.createRole({
-                token,
-                server: selectedServer.server,
-                name: roleName
-            });
-            
-            if (createResponse.code !== 0) {
-                throw new Error(`创建角色失败，错误码: ${createResponse.code}`);
+
+            // 通过 SDK 的 AccountClient 创建角色（token 在 Authorization 头里）
+            const account = this.networkService.account;
+            if (!account) {
+                throw new Error('Account 服务未初始化');
+            }
+            const role = await account.createRole(token, selectedServer.server, roleName);
+
+            if (!role) {
+                throw new Error('创建角色失败（网络不可用或名字冲突）');
             }
 
-            if (!createResponse.role) {
-                throw new Error('创建角色成功但未返回角色信息');
-            }
+            console.log('Role created successfully:', role);
 
-            console.log('Role created successfully:', createResponse.role);
-            
             // 使用创建的角色进行登录
-            await this.loginWithRole(createResponse.role, token);
+            await this.loginWithRole(role);
 
         } catch (error) {
             console.error('Failed to create role:', error);
@@ -308,34 +299,16 @@ export class RoleCreateScene extends Phaser.Scene {
     }
 
     /**
-     * 使用角色登录到游戏服务器
+     * 使用角色登录到游戏服务器：SDK 的 enterGame 走 /gates 发现在线网关、
+     * WS 直连、login.login，之后断线自动续接
      */
-    private async loginWithRole(role: RoleInfo, token: string): Promise<void> {
+    private async loginWithRole(role: RoleInfo): Promise<void> {
         try {
             console.log('Logging in with role:', role);
 
-            // 获取角色对应的rolenode WebSocket URL
-            const rolenodeUrl = this.serverDataService.getRolenodeUrl(role.rolenode);
-            if (!rolenodeUrl) {
-                throw new Error(`未找到角色节点 ${role.rolenode} 的WebSocket地址`);
-            }
-
-            // 初始化网络服务
-            const initSuccess = await this.networkService.initialize();
-            if (!initSuccess) {
-                throw new Error('网络服务初始化失败');
-            }
-
-            // 连接到角色节点
-            const connectSuccess = await this.networkService.connect(rolenodeUrl, role.rolenode);
-            if (!connectSuccess) {
-                throw new Error('连接角色节点失败');
-            }
-
-            // 发送login.login消息
-            const loginResponse = await this.networkService.login(token, role.rid);
-            if (loginResponse.code !== 0) {
-                throw new Error(`WebSocket登录失败，错误码: ${loginResponse.code}`);
+            const ok = await this.networkService.enterGame(role.rid, role.server);
+            if (!ok) {
+                throw new Error('连接网关失败（/gates 无在线网关或登录被拒）');
             }
 
             console.log('WebSocket login successful');
@@ -380,11 +353,11 @@ export class RoleCreateScene extends Phaser.Scene {
         }
 
         const { width, height } = this.scale.gameSize;
-        
+
         this.errorText = this.add.text(
-            width / 2, 
-            height * 0.75, 
-            message, 
+            width / 2,
+            height * 0.75,
+            message,
             {
                 fontSize: 18,
                 color: '#ff6b6b',
@@ -428,12 +401,7 @@ export class RoleCreateScene extends Phaser.Scene {
         // 清理输入框
         this.cleanupInput();
 
-        // 断开网络连接
-        if (this.networkService.connected) {
-            this.networkService.disconnect();
-        }
-
-        // 返回服务器选择场景
+        // 返回服务器选择场景（会话尚未建立，无需断开）
         this.scene.start('ServerSelectScene', {
             provider: this.sceneData?.provider,
             tokens: this.sceneData?.tokens,
@@ -451,7 +419,7 @@ export class RoleCreateScene extends Phaser.Scene {
             if (resizeHandler) {
                 window.removeEventListener('resize', resizeHandler);
             }
-            
+
             this.nameInput.parentNode.removeChild(this.nameInput);
             this.nameInput = null;
         }

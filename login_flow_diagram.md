@@ -1,354 +1,207 @@
 # 登录流程图
 
+文字说明见 [登录流程](doc.md)。
+
 ## 概述
 
-本文档描述了游戏客户端的完整登录认证流程。系统支持两种认证方式：
+- **浏览器客户端（本项目）**：gamepass OAuth 拿 token → account HTTP 选服/查角色/建角 → `GET /gates` 发现网关 → WebSocket 直连 gate_ws → `login.login`。网络层用 skyext 官方 TS SDK（`skyext-client`）。
+- **机器人客户端（skyext `./bin/skyext serve robot`）**：用 `/dev_login` 签 token（仅开发环境），其余流程相同，网络层用 skyext 的 Lua SDK（`sdk/lua`），在 TCP 和 WS 两种传输上各跑一遍，含断线续接。
 
-1. **正常客户端OAuth认证**：通过GamePass OAuth服务进行用户身份认证，获取JWT Token
-2. **机器人客户端模拟认证**：为了测试和自动化需求，机器人客户端直接生成JWT Token，跳过OAuth流程
+两种客户端的会话层语义相同，都按 skyext `docs/guide/client_protocol.md` 实现。
 
-## 完整登录流程（正常客户端）
+## 完整登录流程（浏览器客户端）
 
 ```mermaid
 flowchart TD
-    A[客户端启动] --> B[检查登录状态]
-    B --> C{是否已有有效Token?}
-    
-    C -->|否| D[启动OAuth登录流程]
-    C -->|是| H[使用现有JWT Token]
-    
-    D --> E[跳转到GamePass OAuth页面]
-    E --> F[用户在GamePass完成认证]
-    F --> G[OAuth回调返回JWT Token]
-    G --> H
-    
-    H --> I[HTTP GET /roles?token=xxx<br/>向Account服务获取角色列表]
-    
-    I --> J{是否有角色?}
-    
-    J -->|有角色| K[从角色列表中选择角色]
-    J -->|无角色| L[HTTP POST /create_role<br/>创建新角色]
-    
-    L --> M{创建成功?}
-    M -->|成功| N[获取新创建的角色信息]
-    M -->|失败| O[登录失败]
-    
-    N --> K
-    K --> P[获取角色的rolenode信息]
-    P --> Q[根据rolenode获取对应的wsUrl]
-    Q --> R[建立WebSocket连接到rolenode]
-    
-    R --> S{连接成功?}
-    S -->|失败| T[连接失败]
-    S -->|成功| U[发送sproto login.login消息<br/>包含token, rid, proto_checksum, server]
-    
-    U --> V{登录成功?}
-    V -->|失败| W[登录失败]
-    V -->|成功| X[发送sproto role.login_info消息]
-    
-    X --> Y[登录完成，进入游戏]
-    
-    style A fill:#e1f5fe
-    style Y fill:#c8e6c9
-    style O fill:#ffcdd2
-    style T fill:#ffcdd2
-    style W fill:#ffcdd2
-    style D fill:#fff3e0
-    style E fill:#fff3e0
-    style F fill:#fff3e0
-    style G fill:#fff3e0
+    A[打开页面 :3000] --> B[ResourceLoadingScene<br/>加载 sproto.spb]
+    B --> C[LoginScene]
+    C --> D{URL 带 access_token?}
+    D -->|否| E[点击 Login with GitHub / Local]
+    E --> F[跳转 gamepass /auth/provider]
+    F --> G[gamepass 登录 / 授权]
+    G --> H[回调 :3000/?access_token=...]
+    H --> D
+    D -->|是| I[ServerSelectScene<br/>初始化 SDK + setToken]
+    I --> J[GET /servers]
+    J --> K[渲染服务器列表<br/>非 open 置灰，推荐服标记]
+    K --> L[选服]
+    L --> M[GET /roles?server=...<br/>Authorization: Bearer token]
+    M --> N{有角色?}
+    N -->|否| O[RoleCreateScene<br/>输入角色名]
+    O --> P[POST /create_role]
+    P --> Q
+    N -->|是| Q[SDK enterGame]
+    Q --> R[GET /gates]
+    R --> S[WebSocket 直连 ws_url<br/>连不上换下一台]
+    S --> T[login.login<br/>token + rid + server + proto_checksum]
+    T --> U{code == 0?}
+    U -->|否| K
+    U -->|是| V[保存续接凭据 nonce<br/>开始 15s 心跳]
+    V --> W[role.login_info]
+    W --> X[GameScene]
 ```
 
-## 机器人客户端简化流程
+## 断线续接流程
 
 ```mermaid
 flowchart TD
-    A1[机器人客户端启动] --> B1[直接生成JWT Token<br/>模拟OAuth认证结果]
-    B1 --> C1[HTTP GET /roles?token=xxx<br/>向Account服务获取角色列表]
-    
-    C1 --> D1{是否有角色?}
-    
-    D1 -->|有角色| E1[从角色列表中选择角色]
-    D1 -->|无角色| F1[HTTP POST /create_role<br/>创建新角色]
-    
-    F1 --> G1{创建成功?}
-    G1 -->|成功| H1[获取新创建的角色信息]
-    G1 -->|失败| I1[登录失败]
-    
-    H1 --> E1
-    E1 --> J1[获取角色的rolenode信息]
-    J1 --> K1[根据rolenode获取对应的wsUrl]
-    K1 --> L1[建立WebSocket连接到rolenode]
-    
-    L1 --> M1{连接成功?}
-    M1 -->|失败| N1[连接失败]
-    M1 -->|成功| O1[发送sproto login.login消息<br/>包含token, rid, proto_checksum, server]
-    
-    O1 --> P1{登录成功?}
-    P1 -->|失败| Q1[登录失败]
-    P1 -->|成功| R1[发送sproto role.login_info消息]
-    
-    R1 --> S1[登录完成，进入游戏]
-    
-    style A1 fill:#e1f5fe
-    style S1 fill:#c8e6c9
-    style I1 fill:#ffcdd2
-    style N1 fill:#ffcdd2
-    style Q1 fill:#ffcdd2
-    style B1 fill:#ffeb3b
+    A[在线] --> B{断线?}
+    B -->|WS close 事件| C[offline]
+    B -->|心跳连续 2 次无响应<br/>黑洞，无 close 事件| C
+    B -->|ping 回包 sent 与本地 recv 不一致| C2[清 nonce] --> C
+    C --> D[等 reconnect_delay<br/>重新 GET /gates]
+    D --> E[WebSocket 直连]
+    E --> F{有 nonce?}
+    F -->|是| G[login.resume<br/>rid + nonce + recv]
+    G --> H{code == 0?}
+    H -->|是| I[保存轮换后的新 nonce<br/>在途请求按原 id 重发]
+    I --> J[online，业务无感]
+    H -->|否| K[清 nonce，不重试 resume]
+    F -->|否| L[relogin]
+    K --> L
+    L --> M[tokenProvider 取 token<br/>login.login]
+    M --> N[在途请求返回 null<br/>online]
 ```
 
 ## 服务架构图
 
-### 认证架构图
-
-```mermaid
-graph LR
-    subgraph "客户端类型"
-        Client[游戏客户端]
-        RobotClient[机器人客户端]
-    end
-    
-    subgraph "认证方式"
-        GamePass[GamePass OAuth服务]
-        LocalGen[本地Token生成]
-    end
-    
-    Client -->|OAuth认证| GamePass
-    GamePass -->|返回JWT Token| Client
-    RobotClient -->|直接生成| LocalGen
-    LocalGen -->|模拟Token| RobotClient
-    
-    style GamePass fill:#e3f2fd
-    style LocalGen fill:#fff3e0
-```
-
-### 服务集群架构图
-
 ```mermaid
 graph TB
-    subgraph "Account服务集群"
-        Account1[Account服务1<br/>:8080]
-        Account2[Account服务2<br/>:8081]
+    subgraph 浏览器
+        Client[phaser-game :3000<br/>skyext-client SDK]
     end
-    
-    subgraph "RoleNode集群"
-        RoleNode1[RoleNode1<br/>:1249]
-        RoleNode2[RoleNode2<br/>:1249]
+
+    subgraph 认证
+        GamePass[gamepass :3180<br/>OAuth2 / 本地账号]
+        MongoGP[(MongoDB<br/>gamepass 库)]
     end
-    
-    subgraph "游戏服务器"
-        S1[测试服务器1 - s1]
-        S2[测试服务器2 - s2]
+
+    subgraph skyext
+        Account[account :8080 / :8081<br/>HTTP: servers / roles / create_role / gates]
+        Gate[role 节点 gate_ws :7013 / :7023<br/>WebSocket 二进制帧]
+        Entity[角色实体]
+        Etcd[(etcd<br/>realm 注册)]
+        Mongo[(MongoDB<br/>游戏库)]
     end
-    
-    Account1 -.->|角色数据| S1
-    Account1 -.->|角色数据| S2
-    Account2 -.->|角色数据| S1
-    Account2 -.->|角色数据| S2
-    
-    RoleNode1 -.->|游戏服务| S1
-    RoleNode1 -.->|游戏服务| S2
-    RoleNode2 -.->|游戏服务| S1
-    RoleNode2 -.->|游戏服务| S2
-    
-    style Account1 fill:#e8f5e8
-    style Account2 fill:#e8f5e8
-    style RoleNode1 fill:#fff3e0
-    style RoleNode2 fill:#fff3e0
+
+    Client -->|1 OAuth 登录| GamePass
+    GamePass --- MongoGP
+    Client -->|2 HTTP + Bearer token| Account
+    Client -->|3 WebSocket 直连| Gate
+    Gate --> Entity
+    Gate -->|注册 ws_url| Etcd
+    Account -->|读在线网关| Etcd
+    Account --- Mongo
+    Entity --- Mongo
 ```
 
-### 客户端连接架构图
-
-```mermaid
-graph TB
-    subgraph "客户端"
-        Client[客户端<br/>（已认证）]
-    end
-    
-    subgraph "HTTP服务"
-        AccountCluster[Account服务集群<br/>负载均衡]
-    end
-    
-    subgraph "WebSocket服务"
-        RoleNodeCluster[RoleNode集群<br/>按角色路由]
-    end
-    
-    Client -->|HTTP请求<br/>角色管理| AccountCluster
-    Client -->|WebSocket连接<br/>游戏通信| RoleNodeCluster
-    
-    style Client fill:#e1f5fe
-    style AccountCluster fill:#e8f5e8
-    style RoleNodeCluster fill:#fff3e0
-```
+客户端和网关之间没有代理。网关地址由 role 节点注册进 realm，account 的 `GET /gates` 只返回真在线的网关，客户端配置里只写 account 地址。
 
 ## 协议交互时序图
 
-### 正常客户端OAuth认证流程
+### 浏览器客户端
 
 ```mermaid
 sequenceDiagram
-    participant C as 客户端
-    participant GP as GamePass OAuth
-    participant A as Account服务
-    participant R as RoleNode
-    
-    Note over C: 1. 启动OAuth认证
-    C->>GP: 跳转到OAuth认证页面
-    GP-->>C: 用户完成认证，返回JWT Token
-    
-    Note over C: 2. 使用JWT Token获取角色
-    C->>A: HTTP GET /roles?token=xxx
-    A-->>C: 返回角色列表
-    
-    alt 如果没有角色
-        C->>A: HTTP POST /create_role
-        A-->>C: 返回新创建的角色
+    participant C as phaser-game
+    participant GP as gamepass
+    participant A as account
+    participant G as gate_ws
+    participant E as 角色实体
+
+    C->>GP: GET /auth/local?callback_url=...
+    GP-->>C: 登录页 → 302 回调 ?access_token=...
+    C->>A: GET /servers
+    A-->>C: {code, servers}
+    C->>A: GET /roles?server=s1（Bearer）
+    A-->>C: {code, roles}
+    opt 没有角色
+        C->>A: POST /create_role {server, name}（Bearer）
+        A-->>C: {code, role}
     end
-    
-    Note over C: 3. 选择角色，连接游戏节点
-    C->>R: WebSocket连接到rolenode
-    R-->>C: 连接建立成功
-    
-    C->>R: sproto login.login<br/>{token, rid, proto_checksum, server}
-    R-->>C: 登录响应<br/>{code, rid, rolenode}
-    
-    C->>R: sproto role.login_info
-    R-->>C: 角色信息响应
-    
-    Note over C,R: 登录完成，开始游戏
+    C->>A: GET /gates
+    A-->>C: {code, gates: [{ws_url, ...}]}
+    C->>G: WebSocket 连接 ws_url
+    C->>G: login.login {token, rid, server, proto_checksum}
+    G->>E: 校验 JWT、绑定会话
+    G-->>C: {code, rid, nonce}
+    C->>E: role.login_info
+    E-->>C: {code, info}
+    loop 每 15s
+        C->>E: login.ping {recv}
+        E-->>C: {sent}
+    end
 ```
 
-### 机器人客户端简化认证流程
+### 断线续接
 
 ```mermaid
 sequenceDiagram
-    participant RC as 机器人客户端
-    participant A as Account服务
-    participant R as RoleNode
-    
-    Note over RC: 1. 直接生成JWT Token（模拟OAuth结果）
-    RC->>RC: 本地生成JWT Token<br/>jwt.sign({account: "robot3"}, secret)
-    
-    Note over RC: 2. 使用模拟Token获取角色
-    RC->>A: HTTP GET /roles?token=xxx
-    A-->>RC: 返回角色列表
-    
-    alt 如果没有角色
-        RC->>A: HTTP POST /create_role<br/>{token, server, name}
-        A-->>RC: 返回新创建的角色
-    end
-    
-    Note over RC: 3. 选择角色，连接游戏节点
-    RC->>R: WebSocket连接到rolenode
-    R-->>RC: 连接建立成功
-    
-    RC->>R: sproto login.login<br/>{token, rid, proto_checksum, server}
-    R-->>RC: 登录响应<br/>{code, rid, rolenode}
-    
-    RC->>R: sproto role.login_info
-    R-->>RC: 角色信息响应
-    
-    Note over RC,R: 登录完成，开始游戏
+    participant C as phaser-game
+    participant A as account
+    participant G as gate_ws
+    participant E as 角色实体
+
+    Note over C,G: 连接中断（close 或心跳超时）
+    C->>A: GET /gates
+    A-->>C: {gates}
+    C->>G: WebSocket 重连
+    C->>G: login.resume {rid, nonce, recv}
+    G->>E: 校验 nonce，重放客户端没收到的下行包
+    E-->>C: 重放的响应 / 推送
+    E-->>C: {code, nonce(新), sent}
+    C->>E: 在途请求按原 request id 重发
+    E-->>C: 已执行过的直接返回缓存结果
 ```
 
 ## 关键数据结构
 
-### JWT Token 结构
+### JWT（gamepass 签发）
 
-#### 正常客户端（通过GamePass OAuth获取）
 ```json
 {
-  "account": "user_account_id",
-  "sub": "user_subject_id",
-  "iat": 1638360000,
-  "exp": 1638363600,
-  "iss": "gamepass_oauth_service",
-  "aud": "game_client"
+  "account": "6ad8a4a4a61816e1cee8561c",
+  "email": "user@example.com",
+  "token_type": "access",
+  "exp": 1792600000
 }
 ```
 
-#### 机器人客户端（本地生成，仅用于测试）
+skyext 服务端按 `account` 字段识别账号。验签配置是 skyext 的 `login_jwt_alg` / `login_jwt_secret`（或 RS256/ES256 公钥），必须与 gamepass 的签名配置一致。
+
+### OAuth 回调参数
+
+成功：`http://localhost:3000/?access_token=...&refresh_token=...`
+
+失败：`http://localhost:3000/?error=...&error_description=...`
+
+`OAuthLogin` 读取后立即用 `history.replaceState` 从地址栏清掉。
+
+### 角色信息
+
 ```json
 {
-  "account": "robot3"
+  "rid": 68665289499577,
+  "name": "pgweb063776",
+  "server": "s3"
 }
 ```
 
-### OAuth认证流程数据
+`rid` 超过 2^53 时 SDK 解成 `bigint`，类型为 `bigint | number`，原样传回 `enterGame` 即可。
 
-#### OAuth回调参数
+### account API
+
+| 接口 | 鉴权 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| `GET /servers` | 无 | — | `{code, servers: [{server, name, tag, status, open_time, recommended?}]}` |
+| `GET /roles?server=s1` | Bearer | — | `{code, roles: [RoleInfo]}` |
+| `POST /create_role` | Bearer | `{server, name}` | `{code, role: RoleInfo}` |
+| `GET /gates` | 无 | — | `{code, gates: [{node, ws_url, tcp_addr, weight}]}` |
+
+### 客户端配置（`public/serverlist.json`）
+
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
-  "refresh_token": "refresh_token_string",
-  "token_type": "Bearer",
-  "expires_in": 3600
-}
-```
-
-#### OAuth错误响应
-```json
-{
-  "error": "access_denied",
-  "error_description": "用户拒绝授权"
-}
-```
-
-### 角色信息结构
-```json
-{
-  "rid": "角色ID",
-  "rolenode": "rolenode1",
-  "name": "角色名称",
-  "server": "s1"
-}
-```
-
-### Account服务API
-
-#### 获取角色列表
-```
-GET /roles?token=jwt_token_string
-Response: {
-  "code": 0,
-  "roles": [角色信息数组]
-}
-```
-
-#### 创建角色
-```
-POST /create_role
-Body: {
-  "token": "jwt_token_string",
-  "server": "s1",
-  "name": "角色名称"
-}
-Response: {
-  "code": 0,
-  "role": 角色信息对象
-}
-```
-
-### 服务配置
-```json
-{
-  "servers": {
-    "s1": {"name": "测试服务器1", "server": "s1"},
-    "s2": {"name": "测试服务器2", "server": "s2"}
-  },
-  "rolenodes": {
-    "rolenode1": "ws://localhost:1249",
-    "rolenode2": "ws://localhost:1249"
-  },
-  "account_hosts": [
-    "http://127.0.0.1:8080",
-    "http://127.0.0.1:8081"
-  ],
-  "oauth_config": {
-    "gamepass_base_url": "https://gamepass.example.com",
-    "client_id": "game_client_id",
-    "redirect_uri": "https://game.example.com/oauth/callback"
-  }
+  "account_hosts": ["http://127.0.0.1:8080", "http://127.0.0.1:8081"]
 }
 ```

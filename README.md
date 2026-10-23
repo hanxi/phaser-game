@@ -1,177 +1,113 @@
-# My Phaser Game - OAuth Login Demo
+# phaser-game — skyext Example Browser Client
 
-A modern Phaser 3 game demonstrating OAuth authentication integration with a modular TypeScript architecture.
+A Phaser 3 example client demonstrating the production client flow of [skyext](https://github.com/hanxi/skyext): gamepass OAuth login → server selection → role creation → direct WebSocket connection to the game gate → automatic session resume after disconnects.
+
+This repository is a git submodule at `example/tools/phaser-game` inside skyext. Its network layer depends on the official TypeScript SDK in the skyext repository (`sdk/ts`), so it **must be built inside a skyext checkout**.
 
 ## 🚀 Features
 
-- **OAuth Authentication**: Browser-based OAuth login with GitHub and local providers
-- **Modular Architecture**: Clean separation of concerns with dedicated modules for auth, UI, scenes, and configuration
-- **TypeScript Support**: Full type safety with comprehensive interface definitions
-- **Phaser 3 Integration**: Modern game framework with responsive design
-- **Bun Runtime**: Fast JavaScript runtime and package manager
+- **OAuth authentication**: login via [gamepass](https://github.com/hanxi/gamepass), GitHub and local accounts
+- **Official SDK**: `skyext-client` handles connection, login, heartbeat and session resume (credential rotation, in-flight requests resent with their original ids)
+- **No proxy**: gate addresses come from the account service's `GET /gates`; the browser connects to gate_ws directly
+- **Lossless rid**: int64 role ids above 2^53 are carried as `bigint` end to end
+- **TypeScript + Bun**: full type checking, Bun bundling
 
 ## 📁 Project Structure
 
 ```
 src/
-├── auth/
-│   └── OAuthLogin.ts      # OAuth authentication logic
-├── config/
-│   └── app.ts             # Application configuration
+├── auth/OAuthLogin.ts            # OAuth redirect, callback parsing and URL cleanup
+├── config/app.ts                 # OAuth / game / UI configuration
+├── lib/auth/JWTUtils.ts          # JWT helpers
+├── managers/ResourceManager.ts   # resource loading (sproto.spb, ...)
 ├── scenes/
-│   ├── LoginScene.ts      # Login interface scene
-│   └── GameScene.ts       # Main game scene
-├── types/
-│   └── auth.ts            # TypeScript type definitions
-├── ui/
-│   └── LoginUI.ts         # Login UI components
-└── main.ts                # Application entry point
+│   ├── ResourceLoadingScene.ts   # load resources
+│   ├── LoginScene.ts             # login
+│   ├── ServerSelectScene.ts      # server selection (GET /servers, /roles, enter game)
+│   ├── RoleCreateScene.ts        # role creation (POST /create_role)
+│   └── GameScene.ts              # main game scene
+├── services/
+│   ├── NetworkService.ts         # SkyextClient wrapper
+│   └── ServerDataService.ts      # account HTTP (server list)
+├── types/auth.ts                 # types (RoleInfo etc. re-exported from the SDK)
+├── ui/LoginUI.ts                 # login UI component
+└── main.ts                       # entry point
+public/
+├── serverlist.json               # account host list
+└── resources/protocol/sproto.spb # protocol file, must match the server
 ```
 
 ## 🛠️ Installation
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) (recommended) or Node.js 18+
-- Modern web browser
+- [Bun](https://bun.sh/)
+- A skyext checkout (including this submodule) with the servers running: account and role nodes, plus MongoDB and etcd
+- gamepass running on `:3180`, with its callback whitelist allowing `http://localhost:3000/`
+
+See `docs/guide/fullstack_client.md` in the skyext repository for starting the servers and gamepass.
 
 ### Setup
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd my-phaser-game
-   ```
+```bash
+cd example/tools/phaser-game
+bun install    # links skyext's sdk/ts as skyext-client
+cp ../../build/proto/sproto.spb public/resources/protocol/sproto.spb   # sync protocol
+bun run serve  # build and serve on :3000
+```
 
-2. **Install dependencies**
-   ```bash
-   bun install
-   # or with npm
-   npm install
-   ```
-
-3. **Build the project**
-   ```bash
-   bun run build
-   # or with npm
-   npm run build
-   ```
-
-4. **Start the development server**
-   ```bash
-   bun run serve
-   # or with npm
-   npm run serve
-   ```
-
-5. **Open your browser**
-   Navigate to `http://localhost:3000`
+Open `http://localhost:3000`.
 
 ## 🎮 Usage
 
-### Development Mode
+1. Click **Login with Local** (or GitHub) → gamepass login page → redirected back with a token;
+2. Pick a server (servers that are not open are greyed out; the recommended one is marked);
+3. An existing role enters the game directly; otherwise enter a name to create one;
+4. Once in game, network drops and switches need no handling — the SDK resumes the session.
 
-For development with auto-rebuild:
+### Development Mode
 
 ```bash
 bun run dev
-# or with npm
-npm run dev
 ```
 
-This will watch for file changes and automatically rebuild the project.
+### Configuration
 
-### OAuth Configuration
-
-The OAuth login system supports multiple providers:
-
-- **GitHub OAuth**: Configure your GitHub OAuth app
-- **Local Provider**: For development and testing
-
-Update the OAuth server URL in `src/config/app.ts`:
-
-```typescript
-export const OAUTH_CONFIG = {
-    baseURL: 'http://localhost:3180/auth/', // Your OAuth server
-    // ... other config
-};
-```
+- `public/serverlist.json`: only `account_hosts`; the SDK picks one at random and fails over to the next. Server list and gate addresses both come from the account service.
+- `src/config/app.ts`: `OAUTH_CONFIG.BASE_URL` points to gamepass (default `http://localhost:3180/auth/`).
+- `public/resources/protocol/sproto.spb`: re-sync and `bun run build` after server protocol changes, otherwise login returns `code = 103`.
 
 ## 🏗️ Architecture
 
-### Core Components
+- **NetworkService**: owns the `SkyextClient`; `tokenProvider` reads the current token, `onState` (online / offline / relogin) is mapped to callbacks; `enterGame(rid, server)` resolves to a single awaitable result.
+- **ServerDataService**: reads `serverlist.json`, builds the SDK's `AccountClient`, provides `GET /servers`.
+- **Scenes**: UI and navigation only — no connection, reconnection or protocol details.
 
-- **OAuthLogin**: Handles OAuth flow, token management, and URL parameter processing
-- **LoginScene**: Phaser scene for user authentication interface
-- **GameScene**: Main game content displayed after successful login
-- **LoginUI**: Reusable UI components for login interface
-
-### Configuration-Driven Design
-
-All constants and configurations are centralized in `src/config/app.ts`:
-
-- OAuth settings
-- Game configuration
-- UI styling and layout
-- Button configurations
-
-### Type Safety
-
-Comprehensive TypeScript interfaces in `src/types/auth.ts`:
-
-- `OAuthTokens`: Token structure
-- `OAuthCallback`: Callback function types
-- `GameSceneData`: Scene data interfaces
+Login flow and protocol: [doc.md](doc.md); diagrams: [login_flow_diagram.md](login_flow_diagram.md) (Chinese).
 
 ## 🔧 Scripts
 
 | Command | Description |
 |---------|-------------|
-| `bun run build` | Build the project for production |
-| `bun run dev` | Development mode with file watching |
-| `bun run serve` | Start local development server |
-
-## 🌐 Browser Support
-
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📚 Resources
-
-- [Phaser 3 Documentation](https://photonstorm.github.io/phaser3-docs/)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Bun Documentation](https://bun.sh/docs)
-- [Login Flow Documentation](doc.md) - Detailed login flow and protocol specifications
+| `bun run build` | Build into `dist/` |
+| `bun run dev` | Rebuild on file changes |
+| `bun run serve` | Build and serve on `:3000` |
+| `bunx tsc --noEmit` | Type check |
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+| Symptom | Cause |
+| --- | --- |
+| `bun install` cannot find `skyext-client` | Not inside a skyext checkout; the dependency is `file:../../../sdk/ts` |
+| Login returns `code = 103` | `sproto.spb` differs from the server; re-sync it |
+| gamepass reports `client_callback_url is not allowed` | gamepass `CALLBACK_WHITELIST` does not match `http://localhost:3000/` |
+| "Failed to connect to gate" after picking a server | `/gates` is empty (role node not running), or `ws_url` is unreachable from the browser (forward ports or set `gate_public_host` for remote dev) |
+| `ERR_CONNECTION_REFUSED` for one account host in the console | That account instance is not running; the SDK fails over. Remove it from `serverlist.json` if you only run one |
+| DevTools Offline shows no disconnect | Chrome's offline emulation does not close established WebSockets; use an OS-level network cut |
 
-1. **Build fails**: Ensure you have the correct TypeScript version installed
-2. **OAuth not working**: Check your OAuth server configuration and callback URLs
-3. **Game not loading**: Verify all dependencies are installed and the build completed successfully
+## 📝 License
 
-### Getting Help
-
-If you encounter issues:
-
-1. Check the browser console for error messages
-2. Ensure your OAuth server is running (if using local auth)
-3. Verify all dependencies are properly installed
+MIT, see [LICENSE](LICENSE).
 
 ---
 

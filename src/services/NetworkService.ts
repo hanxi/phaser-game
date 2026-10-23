@@ -1,396 +1,151 @@
-// import { Network } from '../../sconn-client/src';
-import { Network } from 'sconn-client';
-import { ResourceManager } from '../managers/ResourceManager';
-import { ServerDataService, ServerInfo } from './ServerDataService';
+import { SkyextClient, type AccountClient, type ProtoArgs } from 'skyext-client';
 
 /**
- * 网络服务类
- * 基于Network类实现的WebSocket客户端，支持请求-响应模式
+ * 网络服务：skyext-client SDK（SkyextClient）的薄封装。
+ *
+ * 连接、login/resume/ping、下行计数、断线续接、在途请求按原 id 重发，全部在
+ * SDK 的会话层里（docs/guide/client_sdk.md）。这里只做三件事：持有实例、把
+ * 会话状态映射成回调、把「进游戏」收敛成一个可等待的结果。
+ *
+ * 浏览器直连 account /gates 返回的 gate_ws 地址，数据路径上没有代理；断线
+ * 续接靠凭据轮换 + 服务端幂等重放，重发的请求不会被执行两次。
  */
 export class NetworkService {
-  private network: Network | null = null;
-  private isRunning: boolean = false;
-  private updateInterval: number | null = null;
-  private checksum: string | null = null;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 5;
-  private reconnectDelay: number = 1000;
-  private lastUrl: string = '';
-  private roleNodeId: string = 'rolenode1';
-  private currentServer: ServerInfo | null = null; // 当前选择的服务器信息
+  private client: SkyextClient | null = null;
+  /** tokenProvider 从这里取值。token 可能过期，SDK 每次完整登录都会重新读 */
+  private currentToken: string = '';
 
-  // 事件回调
+  // 事件回调（映射自 SDK 的 onState）
   private onConnectedCallback?: () => void;
   private onDisconnectedCallback?: () => void;
   private onErrorCallback?: (error: string) => void;
 
-  constructor() {
-    // 构造函数保持简单
-  }
-
   /**
-   * 设置当前选择的服务器
-   * @param serverId 服务器ID
+   * 初始化 SDK 客户端。可重复调用（登出后再登录），旧实例会被关闭。
+   * @param spb sproto.spb 内容（./bin/skyext generate proto 产物，必须与
+   *            服务端一致——SDK 登录时自动带它的 md5 作 proto_checksum）
+   * @param accountHosts Account 服务地址列表（serverlist.json）
    */
-  public setCurrentServer(serverId: string): boolean {
-    const serverDataService = ServerDataService.getInstance();
-    const serverInfo = serverDataService.getServerById(serverId);
-
-    if (!serverInfo) {
-      console.error('Server not found:', serverId);
-      return false;
-    }
-
-    this.currentServer = serverInfo;
-    console.log('Current server set to:', serverInfo);
-    return true;
-  }
-
-  /**
-   * 获取当前选择的服务器信息
-   */
-  public getCurrentServer(): ServerInfo | null {
-    return this.currentServer;
-  }
-
-  /**
-   * 初始化网络服务
-   * @param protocolBuffer 协议文件数据（可选，如果不提供则从资源管理器获取）
-   */
-  public async initialize(protocolBuffer?: Uint8Array): Promise<boolean> {
+  public initialize(spb: Uint8Array, accountHosts: string[]): boolean {
     try {
-      let buffer: Uint8Array;
-
-      if (protocolBuffer) {
-        // 如果提供了协议数据，直接使用
-        buffer = protocolBuffer;
-      } else {
-        // 从资源管理器获取 spb 文件内容
-        const resourceManager = ResourceManager.getInstance();
-        const spbData = resourceManager.getResource<ArrayBuffer>('protocol/sproto.spb');
-
-        if (!spbData) {
-          throw new Error('Protocol file not found in resources. Please ensure sproto.spb is loaded.');
-        }
-
-        buffer = new Uint8Array(spbData);
-      }
-
-      // 创建Network实例
-      this.network = new Network(buffer);
-      this.checksum = this.network.checksumValue();
-      console.log('协议校验码:', this.checksum);
-
-      // 注册默认消息处理器
-      this.registerDefaultHandlers();
-
-      console.log('NetworkService initialized successfully');
+      this.client?.close();
+      this.client = new SkyextClient({
+        accountHosts,
+        spb,
+        tokenProvider: () => {
+          if (!this.currentToken) {
+            throw new Error('没有可用的登录 token（setToken 未调用或已登出）');
+          }
+          return this.currentToken;
+        },
+        onPush: (name: string, args?: ProtoArgs) => {
+          console.log('服务端推送:', name, args);
+        },
+        onState: (state) => {
+          console.log('会话状态:', state);
+          if (state === 'online') {
+            this.onConnectedCallback?.();
+          } else if (state === 'offline') {
+            this.onDisconnectedCallback?.();
+          } else if (state === 'relogin') {
+            // 续接失败、正在走完整登录（tokenProvider 会被再次调用）
+            this.onErrorCallback?.('连接中断，正在重新登录...');
+          }
+        },
+      });
+      console.log('NetworkService initialized, proto checksum:', this.client.codec.checksum);
       return true;
     } catch (error) {
       console.error('Failed to initialize NetworkService:', error);
+      this.client = null;
       return false;
     }
   }
 
-  /**
-   * 连接到WebSocket服务器
-   * @param url WebSocket服务器地址
-   * @param roleNodeId 角色节点ID，默认为'rolenode1'
-   */
-  public async connect(url: string, roleNodeId: string = 'rolenode1'): Promise<boolean> {
-    if (!this.network) {
-      console.error('Network not initialized');
-      return false;
-    }
+  /** OAuth 拿到的 access token。SDK 只在完整登录时读取；续接不需要 token */
+  public setToken(token: string): void {
+    this.currentToken = token;
+  }
 
-    this.lastUrl = url;
-    this.roleNodeId = roleNodeId;
-
-    const connectResult = this.network.connect(url, roleNodeId);
-
-    if (!connectResult.success) {
-      console.error(`连接失败: ${connectResult.error}`);
-      this.onErrorCallback?.(connectResult.error || 'Connection failed');
-      return false;
-    }
-
-    // 等待连接建立
-    await this.waitForConnection();
-
-    if (this.network.isConnected()) {
-      console.log('Successfully connected to server');
-      this.reconnectAttempts = 0;
-      this.startUpdateLoop();
-      this.onConnectedCallback?.();
-      return true;
-    } else {
-      console.error('Failed to establish connection');
-      return false;
-    }
+  /** Account HTTP 层（servers / roles / createRole / gates），initialize 后可用 */
+  public get account(): AccountClient | null {
+    return this.client?.account ?? null;
   }
 
   /**
-   * 等待连接建立
+   * 进游戏：SDK 内部走 /gates 发现在线网关 → WS 直连（失败自动换下一台）→
+   * login.login。之后断线会自动续接/重登，业务层不用管。
+   * @param rid 角色 id（可能是 bigint，原样传回，不要 Number()）
+   * @param server 角色的出生服
    */
-  private waitForConnection(timeout: number = 5000): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-      const checkConnection = () => {
-        if (this.network?.isConnected()) {
-          resolve();
-        } else if (Date.now() - startTime > timeout) {
-          reject(new Error('Connection timeout'));
+  public async enterGame(rid: bigint | number, server: string): Promise<boolean> {
+    if (!this.client) {
+      throw new Error('Network not initialized');
+    }
+    let ok = await this.client.enterGame({ rid, server });
+    if (!ok) {
+      // 首次握手失败不算终局：会话层还在按 reconnectDelayMs 持续重连，
+      // 等它一会儿（比如网关正好在重启）
+      ok = await this.waitForOnline(10_000);
+    }
+    return ok;
+  }
+
+  private waitForOnline(timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const tick = () => {
+        if (this.client?.online) {
+          resolve(true);
+        } else if (Date.now() - started > timeoutMs) {
+          resolve(false);
         } else {
-          setTimeout(checkConnection, 100);
+          setTimeout(tick, 100);
         }
       };
-      checkConnection();
+      tick();
     });
   }
 
-  /**
-   * 注册默认消息处理器
-   */
-  private registerDefaultHandlers(): void {
-    if (!this.network) return;
-
-    // 注册心跳处理器
-    this.network.register('heartbeat', (request: any) => {
-      console.log('收到心跳请求');
-      return { timestamp: Date.now() };
-    });
-
-    // 注册登录响应处理器（示例）
-    this.network.register('login.login', (request: any) => {
-      console.log('处理登录请求:', request);
-      return {
-        success: true,
-        userId: 12345,
-        username: request.username || 'unknown',
-        token: 'mock_token_' + Date.now()
-      };
-    });
+  /** 业务请求。断线续接后按原 request id 自动重发，等待跨越重连 */
+  public request<T = ProtoArgs>(name: string, param?: ProtoArgs): Promise<T | null> {
+    if (!this.client) {
+      return Promise.resolve(null);
+    }
+    return this.client.request<T>(name, param);
   }
 
-  /**
-   * 开始网络更新循环
-   */
-  private startUpdateLoop(): void {
-    if (this.isRunning) {
-      return; // 已经在运行
-    }
-
-    this.isRunning = true;
-
-    this.updateInterval = window.setInterval(() => {
-      if (!this.network || !this.isRunning) {
-        return;
-      }
-
-      const updateResult = this.network.update();
-
-      if (!updateResult.success) {
-        console.error(`网络更新错误: ${updateResult.error}`);
-
-        if (updateResult.status === 'connect_break') {
-          console.log('连接断开，尝试重连...');
-          this.handleReconnect();
-        }
-      }
-    }, 50); // 每50ms更新一次
+  /** 获取角色详细信息（role.login_info） */
+  public async getRoleLoginInfo(): Promise<ProtoArgs | null> {
+    return this.request('role.login_info');
   }
 
-  /**
-   * 停止网络更新循环
-   */
-  private stopUpdateLoop(): void {
-    this.isRunning = false;
-
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-      this.updateInterval = null;
-    }
-  }
-
-  /**
-   * 处理重连逻辑
-   */
-  private async handleReconnect(): Promise<void> {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('达到最大重连次数，停止重连');
-      this.onErrorCallback?.('Max reconnection attempts reached');
-      return;
-    }
-
-    this.reconnectAttempts++;
-    console.log(`尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-
-    // 停止当前的更新循环
-    this.stopUpdateLoop();
-
-    // 等待一段时间后重连
-    await new Promise(resolve => setTimeout(resolve, this.reconnectDelay));
-
-    // 尝试重新连接
-    const success = await this.connect(this.lastUrl, this.roleNodeId);
-    if (!success) {
-      // 重连失败，增加延迟时间
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
-    } else {
-      // 重连成功，重置延迟时间
-      this.reconnectDelay = 1000;
-    }
-  }
-
-  /**
-   * 发送登录请求
-   * @param token JWT令牌
-   */
-  public async login(token: string, rid?: number): Promise<any> {
-    if (!this.network) {
-      throw new Error('Network not initialized');
-    }
-
-    if (!this.currentServer) {
-      throw new Error('No server selected. Please call setCurrentServer() first.');
-    }
-
-
-    try {
-      const data = {
-        token,
-        rid: rid,
-        proto_checksum: this.checksum,
-        server: this.currentServer.server, // 使用server字段
-      };
-
-      console.log("开始登录", data);
-      const response = await this.network.call('login.login', data);
-      console.log("登录成功", response);
-      return response;
-    } catch (error) {
-      console.error('登录失败:', error);
-      throw error;
-    }
-  }
-
-
-
-  /**
-   * 选择角色
-   * @param rid 角色ID
-   * @param server 服务器ID，如果不提供则使用当前选择的服务器
-   */
-  public async chooseRole(rid: number, server?: string): Promise<any> {
-    if (!this.network) {
-      throw new Error('Network not initialized');
-    }
-
-    console.log("当前选择的服务器:", this.currentServer);
-    try {
-      const serverParam = server || this.currentServer?.server;
-      if (!serverParam) {
-        throw new Error('No server specified and no current server selected');
-      }
-
-      const data = {
-        rid,
-        server: serverParam
-      };
-      console.log("开始选择角色", data);
-      const response = await this.network.call('login.choose_role', data);
-      console.log("选择角色成功", response);
-      return response;
-    } catch (error) {
-      console.error('选择角色失败:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 获取角色详细信息
-   * 发送role.login_info消息获取角色详情
-   */
-  public async getRoleLoginInfo(): Promise<any> {
-    if (!this.network) {
-      throw new Error('Network not initialized');
-    }
-
-    try {
-      console.log("开始获取角色详细信息");
-      const response = await this.network.call('role.login_info');
-      console.log("获取角色详细信息成功", response);
-      return response;
-    } catch (error) {
-      console.error('获取角色详细信息失败:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 发送登出请求
-   */
+  /** 登出：关闭会话（SDK 会 fail 掉所有 pending 请求）并清掉 token */
   public logout(): void {
-    if (!this.network) {
-      throw new Error('Network not initialized');
-    }
-
-    try {
-      console.log("开始登出");
-      this.network.invoke('login.logout');
-      console.log("登出成功");
-      this.disconnect();
-      return;
-    } catch (error) {
-      console.error('登出失败:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 注册消息处理器
-   * @param messageType 消息类型
-   * @param handler 处理函数
-   */
-  public onMessage(messageType: string, handler: (data: any) => any): void {
-    if (this.network) {
-      this.network.register(messageType, handler);
-    }
-  }
-
-  /**
-   * 断开连接
-   */
-  public disconnect(): void {
-    console.log('Disconnecting from server...');
-
-    this.stopUpdateLoop();
-
-    if (this.network) {
-      this.network.close();
-    }
-
-    this.reconnectAttempts = 0;
+    console.log('Logging out...');
+    this.client?.close();
+    this.currentToken = '';
     this.onDisconnectedCallback?.();
   }
 
-  /**
-   * 获取连接状态
-   */
+  /** 断开连接（回到登录/选服界面时用）。与 logout 等价，保留旧名字 */
+  public disconnect(): void {
+    this.client?.close();
+    this.client = null;
+    this.currentToken = '';
+  }
+
+  /** 在线状态（登录/续接成功且未断开） */
   public get connected(): boolean {
-    return this.network ? this.network.isConnected() : false;
+    return this.client?.online ?? false;
   }
 
-  /**
-   * 获取协议校验码
-   */
+  /** 协议校验码（spb 的 md5） */
   public get protocolChecksum(): string | null {
-    return this.checksum;
+    return this.client?.codec.checksum ?? null;
   }
 
-  /**
-   * 设置连接事件回调
-   */
+  /** 设置连接事件回调 */
   public setEventCallbacks(callbacks: {
     onConnected?: () => void;
     onDisconnected?: () => void;
@@ -399,21 +154,5 @@ export class NetworkService {
     this.onConnectedCallback = callbacks.onConnected;
     this.onDisconnectedCallback = callbacks.onDisconnected;
     this.onErrorCallback = callbacks.onError;
-  }
-
-  /**
-   * 设置重连参数
-   */
-  public setReconnectConfig(maxAttempts: number, initialDelay: number = 1000): void {
-    this.maxReconnectAttempts = maxAttempts;
-    this.reconnectDelay = initialDelay;
-  }
-
-
-  /**
-   * 获取Network实例（用于高级操作）
-   */
-  public get networkInstance(): Network | null {
-    return this.network;
   }
 }

@@ -5,7 +5,7 @@
       "name": "my-phaser-game",
       "dependencies": {
         "phaser": "^3.90.0",
-        "sconn-client": "^1.0.11",
+        "skyext-client": "file:../../../sdk/ts",
       },
       "devDependencies": {
         "@types/node": "^20.19.23",
@@ -14,20 +14,20 @@
     },
   },
   "packages": {
-    "@imhanxi/sproto-js": ["@imhanxi/sproto-js@0.1.9", "", {}, "sha512-z4mMFpYBPut2/cMxv7DXmJNqQK/caBz5WZvrddbwhaAhH/xvKJVycWlUxv0oGH9cPAPAB1mcI0Q4tzERf4xjHQ=="],
+    "@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
 
     "@types/node": ["@types/node@20.19.23", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-yIdlVVVHXpmqRhtyovZAcSy0MiPcYWGkoO4CGe/+jpP0hmNuihm4XhHbADpK++MsiLHP5MVlv+bcgdF99kSiFQ=="],
+
+    "bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 
     "eventemitter3": ["eventemitter3@5.0.1", "", {}, "sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA=="],
 
     "phaser": ["phaser@3.90.0", "", { "dependencies": { "eventemitter3": "^5.0.1" } }, "sha512-/cziz/5ZIn02uDkC9RzN8VF9x3Gs3XdFFf9nkiMEQT3p7hQlWuyjy4QWosU802qqno2YSLn2BfqwOKLv/sSVfQ=="],
 
-    "sconn-client": ["sconn-client@1.0.11", "", { "dependencies": { "@imhanxi/sproto-js": "^0.1.9", "ws": "^8.14.2" } }, "sha512-H7vxVWuIoIAWJb+bkr1R684rMZQezxSGayUUF3TNenjud4BUSNKTCw4B8V0SWcgzLJilqE0BoAxAquDEexsodg=="],
+    "skyext-client": ["skyext-client@file:../../../sdk/ts", { "devDependencies": { "@types/bun": "^1.2.0", "typescript": "^5.7.0" } }],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
-
-    "ws": ["ws@8.18.3", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg=="],
   }
 }
