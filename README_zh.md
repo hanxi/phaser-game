@@ -100,7 +100,7 @@ bun run dev
 | --- | --- |
 | `bun install` 找不到 `skyext-client` | 不在 skyext 检出内；依赖是 `file:../../../sdk/ts` |
 | 登录返回 `code = 103` | `sproto.spb` 与服务端不一致，重新同步 |
-| gamepass 报 `client_callback_url is not allowed` | gamepass 的 `CALLBACK_WHITELIST` 未匹配 `http://localhost:3000/` |
+| gamepass 报 `Provided callback_url is not allowed` | gamepass 的 `CALLBACK_WHITELIST` 未匹配 `http://localhost:3000/` |
 | 选服后提示连接网关失败 | `/gates` 为空（role 节点未启动），或 `ws_url` 浏览器不可达（远程开发需转发端口或配置 `gate_public_host`） |
 | 控制台出现某个 account 地址 `ERR_CONNECTION_REFUSED` | 该 account 未启动，SDK 会自动换下一台；只起一台时可从 `serverlist.json` 删掉 |
 | DevTools 设为 Offline 后看不到断线 | Chrome 的 offline 模拟不会断开已建立的 WebSocket，用系统级断网验证 |

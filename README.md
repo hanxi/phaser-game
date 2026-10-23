@@ -100,7 +100,7 @@ Login flow and protocol: [doc.md](doc.md); diagrams: [login_flow_diagram.md](log
 | --- | --- |
 | `bun install` cannot find `skyext-client` | Not inside a skyext checkout; the dependency is `file:../../../sdk/ts` |
 | Login returns `code = 103` | `sproto.spb` differs from the server; re-sync it |
-| gamepass reports `client_callback_url is not allowed` | gamepass `CALLBACK_WHITELIST` does not match `http://localhost:3000/` |
+| gamepass reports `Provided callback_url is not allowed` | gamepass `CALLBACK_WHITELIST` does not match `http://localhost:3000/` |
 | "Failed to connect to gate" after picking a server | `/gates` is empty (role node not running), or `ws_url` is unreachable from the browser (forward ports or set `gate_public_host` for remote dev) |
 | `ERR_CONNECTION_REFUSED` for one account host in the console | That account instance is not running; the SDK fails over. Remove it from `serverlist.json` if you only run one |
 | DevTools Offline shows no disconnect | Chrome's offline emulation does not close established WebSockets; use an OS-level network cut |
